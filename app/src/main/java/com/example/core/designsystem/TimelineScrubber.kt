@@ -1,0 +1,638 @@
+package com.example.core.designsystem
+
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import kotlinx.coroutines.flow.drop
+
+// Live grid: the finest the dial reports while dragging — slow, careful drags can land here.
+private const val STEP_MIN = 5
+private const val MINUTES_PER_TICK = 15f // one 16.dp tick column == 15 minutes at 1x speed
+private const val MIN_OFFSET_MIN = -720f // −12h
+private const val MAX_OFFSET_MIN = 720f  // +12h
+// Detents fire at most this often, so a fast spin whirrs rather than machine-guns.
+private const val DETENT_MIN_GAP_NANOS = 30_000_000L // 30ms
+// Idle time before the expanded dial snaps back to the pill — keep under 500ms for a quick tuck-away.
+private const val DIAL_COLLAPSE_DELAY_MS = 400L
+
+// Acceleration curve for dragging: slow drags stay ~1:1 (granular), fast drags multiply the
+// distance so a quick swipe covers far more time. `speedPxPerMs` is the finger's instant speed.
+private fun dragGain(speedPxPerMs: Float): Float =
+    (1f + speedPxPerMs * 1.1f).coerceIn(1f, 4f)
+
+// On release, the fling speed (px/sec) picks how coarsely the dial settles: a hard flick rounds
+// to the hour and covers lots of ground, a gentle release stays on the fine 5-minute grid.
+private fun snapUnitForVelocity(absVelocityPxPerSec: Float): Int = when {
+    absVelocityPxPerSec > 2500f -> 60
+    absVelocityPxPerSec > 1000f -> 30
+    absVelocityPxPerSec > 300f  -> 15
+    else                        -> STEP_MIN
+}
+
+// Compact offset label, e.g. "Live", "+3h 15m", "-2h".
+private fun offsetLabel(totalMinutes: Int): String {
+    if (totalMinutes == 0) return "Live"
+    val sign = if (totalMinutes > 0) "+" else "-"
+    val abs = kotlin.math.abs(totalMinutes)
+    val hours = abs / 60
+    val minutes = abs % 60
+    return buildString {
+        append(sign)
+        if (hours > 0) append("${hours}h")
+        if (minutes > 0) {
+            if (hours > 0) append(" ")
+            append("${minutes}m")
+        }
+    }
+}
+
+// Direction-aware crossfade for the readouts: the new value slides in from below when scrubbing
+// later, from above when scrubbing earlier, so the motion mirrors the dial's direction.
+private fun directionalSlide(target: Int, initial: Int): ContentTransform {
+    val dir = if (target > initial) 1 else -1
+    return ContentTransform(
+        targetContentEnter = slideInVertically(tween(220)) { h -> dir * h } + fadeIn(tween(180)),
+        initialContentExit = slideOutVertically(tween(220)) { h -> -dir * h } + fadeOut(tween(150)),
+    )
+}
+
+@Composable
+fun TimelineScrubber(
+    scrubInstant: Instant?,
+    hazeState: HazeState,
+    onScrubTimeChanged: (Instant?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val haptic = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+
+    // Dial offset in *minutes* (−720..720) held in an Animatable so resets, tap-to-jump, and
+    // drag-release all *glide* to their target instead of snapping. Bounds let a fast drag pin
+    // cleanly at ±12h instead of overshooting.
+    val slider = remember { Animatable(0f).apply { updateBounds(MIN_OFFSET_MIN, MAX_OFFSET_MIN) } }
+    val sliderValue = slider.value
+    // True while a programmatic glide is running, so the live watcher below doesn't
+    // machine-gun haptics/callbacks through the in-between steps.
+    var programmatic by remember { mutableStateOf(false) }
+    var dialPressed by remember { mutableStateOf(false) } // true while a finger is held on the dial
+    // Finger velocity at release decides how coarsely the dial settles (see snapUnitForVelocity).
+    val velocityTracker = remember { VelocityTracker() }
+
+    val density = LocalDensity.current
+    val tickSpacingPx = remember { with(density) { 16.dp.toPx() } }
+    val textMeasurer = rememberTextMeasurer()
+
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    // Material You elevated-card tone backing the blur — lifted lighter than the page so the
+    // card and its text never wash out into the dark background (see GlassDefaults.scrubberCardTone).
+    val cardSurfaceColor = GlassDefaults.scrubberCardTone
+    val glassOpacity = LocalGlassOpacity.current
+    val scrubberGlass = remember(glassOpacity) { ScrubberGlass.alphas(glassOpacity) }
+    val labelStyle = TextStyle(
+        color = onSurfaceColor.copy(alpha = 0.85f),
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        textAlign = TextAlign.Center
+    )
+    val readoutFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a · EEE, MMM d") }
+
+    val totalSteps = 48 // −48..+48 quarter-hour steps span the ±12h range
+
+    // The live offset, snapped to a fine 5-minute grid — the single source of truth for the
+    // readout, the pill, and the callback. Slow drags can land on any 5-min mark (granular);
+    // fast flicks settle on coarser marks (see onDragEnd).
+    val liveOffsetMin by remember {
+        derivedStateOf { (slider.value / STEP_MIN).roundToInt() * STEP_MIN }
+    }
+    val scrubbed = liveOffsetMin != 0
+
+    // Whenever the live offset changes for a *user-driven* reason, tell the parent and tick a
+    // detent. Programmatic glides (reset / tap-to-jump) stay silent here and fire their own
+    // single update on arrival. snapshotFlow conflates per frame, so a fast spin won't flood.
+    LaunchedEffect(Unit) {
+        var lastHapticNanos = 0L
+        snapshotFlow { liveOffsetMin }
+            .drop(1) // skip the initial 0 so opening the screen is silent
+            .collect { offset ->
+                if (!programmatic) {
+                    onScrubTimeChanged(if (offset == 0) null else Instant.now().plusSeconds(offset * 60L))
+                    val now = System.nanoTime()
+                    if (now - lastHapticNanos > DETENT_MIN_GAP_NANOS) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        lastHapticNanos = now
+                    }
+                }
+            }
+    }
+
+    // External reset (parent clears the scrub) — glide home, unless a finger or another
+    // animation is already driving the dial. Marked programmatic so the watcher stays quiet.
+    LaunchedEffect(scrubInstant) {
+        if (scrubInstant == null && slider.value != 0f && !slider.isRunning && !dialPressed) {
+            programmatic = true
+            try {
+                slider.animateTo(0f, tween(360, easing = FastOutSlowInEasing))
+            } finally {
+                programmatic = false
+            }
+        }
+    }
+
+    // Glide the dial to a target quarter-hour step, then fire one haptic + time update on arrival.
+    // The try/finally clears `programmatic` even if a new gesture cancels the glide; the trailing
+    // update is reached only on a clean arrival (a cancelling gesture drives its own update).
+    fun goToStep(step: Int, animate: Boolean = true) {
+        val clamped = step.coerceIn(-totalSteps, totalSteps)
+        scope.launch {
+            programmatic = true
+            try {
+                val target = (clamped * 15).toFloat()
+                if (animate) slider.animateTo(target, tween(380, easing = FastOutSlowInEasing))
+                else slider.snapTo(target)
+            } finally {
+                programmatic = false
+            }
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            onScrubTimeChanged(if (clamped == 0) null else Instant.now().plusSeconds(clamped * 15L * 60L))
+        }
+    }
+
+    // Collapsed-by-default UX: show a compact, solid pill. Tap to expand into the full
+    // dial; after a brief idle the dial auto-collapses back to the pill.
+    var expanded by remember { mutableStateOf(false) }
+    var interactionTick by remember { mutableStateOf(0) } // bump on any interaction to reset the timer
+
+    // Auto-collapse after a short idle, but never while a finger is still down
+    // (so a press-and-hold or a pause mid-slide keeps the dial open).
+    LaunchedEffect(expanded, interactionTick, dialPressed) {
+        if (expanded && !dialPressed) {
+            delay(DIAL_COLLAPSE_DELAY_MS)
+            expanded = false
+        }
+    }
+
+    // Press-scale for the collapsed pill so it feels physical when held.
+    val pillScale by animateFloatAsState(
+        targetValue = if (dialPressed) 0.94f else 1f,
+        animationSpec = Motion.bouncy(),
+        label = "pillScale"
+    )
+
+    val gestureContext = remember { object { var wasExpandedAtStart = false } }
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .pointerInput(tickSpacingPx) {
+                detectScrubberPressDrag(
+                    onPressStart = {
+                        gestureContext.wasExpandedAtStart = expanded
+                        if (!expanded) {
+                            expanded = true
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                        dialPressed = true
+                        programmatic = false
+                        interactionTick++
+                        velocityTracker.resetTracking()
+                        scope.launch { slider.stop() }
+                    },
+                    onDrag = { delta, change ->
+                        velocityTracker.addPosition(change.uptimeMillis, change.position)
+                        val dtMs = (change.uptimeMillis - change.previousUptimeMillis)
+                            .coerceAtLeast(1L).toFloat()
+                        val gain = dragGain(abs(delta.x) / dtMs)
+                        val minutesChange = -(delta.x / tickSpacingPx) * MINUTES_PER_TICK * gain
+                        val target = (slider.value + minutesChange).coerceIn(MIN_OFFSET_MIN, MAX_OFFSET_MIN)
+                        scope.launch { slider.snapTo(target) }
+                        interactionTick++
+                    },
+                    onPressEnd = { dragged, releasePosition ->
+                        dialPressed = false
+                        interactionTick++
+                        if (dragged) {
+                            val velocityX = velocityTracker.calculateVelocity().x
+                            val unit = snapUnitForVelocity(abs(velocityX))
+                            scope.launch {
+                                val snapped = ((slider.value / unit).roundToInt() * unit).toFloat()
+                                slider.animateTo(snapped, animationSpec = Motion.snappy())
+                            }
+                        } else if (gestureContext.wasExpandedAtStart) {
+                            interactionTick++
+                            val tappedStep = (slider.value / 15f +
+                                (releasePosition.x - size.width / 2f) / tickSpacingPx).roundToInt()
+                            goToStep(tappedStep)
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+    AnimatedContent(
+        targetState = expanded,
+        modifier = Modifier.fillMaxWidth(),
+        transitionSpec = { Motion.scrubberExpandCollapseTransform(targetState) },
+        contentAlignment = Alignment.BottomCenter,
+        label = "scrubber_expand"
+    ) { isExpanded ->
+        if (!isExpanded) {
+            // ---- Collapsed pill ----
+            Box(
+                modifier = Modifier
+                    .wrapContentWidth(Alignment.CenterHorizontally)
+                    .defaultMinSize(
+                        minWidth = ScrubberPillDefaults.minWidth,
+                        minHeight = ScrubberPillDefaults.minHeight,
+                    )
+                    .scale(pillScale)
+                    .clip(RoundedCornerShape(28.dp))
+                    .liquidGlass(
+                        hazeState = hazeState,
+                        shape = RoundedCornerShape(28.dp),
+                        tintColor = Color.Transparent,
+                        borderWidth = 1.dp,
+                        borderColor = primaryColor.copy(alpha = 0.4f),
+                        frosted = scrubberGlass.frosted,
+                    )
+                    .background(
+                        color = cardSurfaceColor.copy(alpha = scrubberGlass.pillTint),
+                        shape = RoundedCornerShape(28.dp),
+                    )
+                    .padding(
+                        horizontal = ScrubberPillDefaults.horizontalPadding,
+                        vertical = ScrubberPillDefaults.verticalPadding,
+                    )
+                    .testTag("timeline_scrubber_pill")
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Icon sits in a primary-tinted chip so the control reads as tappable chrome
+                    // regardless of how transparent the glass behind it is.
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(primaryColor.copy(alpha = 0.16f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Open time dial",
+                            tint = primaryColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    AnimatedContent(
+                        targetState = liveOffsetMin,
+                        transitionSpec = { directionalSlide(targetState, initialState) },
+                        contentAlignment = Alignment.CenterStart,
+                        label = "pill_label"
+                    ) { off ->
+                        Text(
+                            text = offsetLabel(off),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (off == 0) onSurfaceColor else primaryColor
+                        )
+                    }
+                    // Up-chevron hints the pill expands into the full dial on press.
+                    if (!scrubbed) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = null,
+                            tint = onSurfaceColor.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    // When scrubbed, offer a one-tap reset right on the pill — no need to expand.
+                    if (scrubbed) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(primaryColor.copy(alpha = 0.15f))
+                                .clickable {
+                                    interactionTick++
+                                    goToStep(0)
+                                }
+                                .padding(4.dp)
+                                .testTag("pill_reset_to_live")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = "Reset to live",
+                                tint = primaryColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            return@AnimatedContent
+        }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("timeline_scrubber_card"),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        // Wrap with LiquidGlass backdrop blur
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .liquidGlass(
+                    hazeState = hazeState,
+                    shape = RoundedCornerShape(24.dp),
+                    tintColor = Color.Transparent,
+                    borderWidth = 1.5.dp,
+                    borderColor = primaryColor.copy(alpha = 0.5f),
+                    frosted = scrubberGlass.frosted,
+                )
+                // Solid Material You scrim laid *over* the glass refraction shader (which otherwise
+                // washes the tint toward the dark surface) and *under* the content, so the dial's
+                // text and ticks always sit on a legible, clearly-raised card.
+                .background(
+                    color = cardSurfaceColor.copy(alpha = scrubberGlass.cardTint),
+                    shape = RoundedCornerShape(24.dp),
+                )
+                .padding(20.dp)
+        ) {
+            Column {
+                // Header of Scrubber
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Interactive Virtual Time Dial",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = onSurfaceColor
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        AnimatedContent(
+                            targetState = liveOffsetMin,
+                            transitionSpec = { directionalSlide(targetState, initialState) },
+                            contentAlignment = Alignment.CenterStart,
+                            label = "scrub_readout"
+                        ) { off ->
+                            val text = if (off == 0) {
+                                "Synced with Live Ticker"
+                            } else {
+                                ZonedDateTime
+                                    .ofInstant(Instant.now().plusSeconds(off * 60L), ZoneId.systemDefault())
+                                    .format(readoutFormatter)
+                            }
+                            Text(
+                                text = text,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = onSurfaceColor.copy(alpha = 0.9f),
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (scrubbed) {
+                        IconButton(
+                            onClick = {
+                                interactionTick++
+                                goToStep(0)
+                            },
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = primaryColor.copy(alpha = 0.1f),
+                                contentColor = primaryColor
+                            ),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .testTag("reset_timeline_scrub")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.RestartAlt,
+                                contentDescription = "Reset time scrubber to live",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // The Draggable Physical Dial Canvas
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                        .background(
+                            color = onSurfaceColor.copy(alpha = scrubberGlass.trackBackground),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val widthValue = size.width
+                        val heightValue = size.height
+                        val centerX = widthValue / 2f
+
+                        // High-contrast center highlight: a soft primary-tinted band marks the
+                        // "now" column so the selected time reads clearly against the ticks.
+                        val bandHalf = tickSpacingPx * 0.9f
+                        drawRect(
+                            color = primaryColor.copy(alpha = 0.18f),
+                            topLeft = Offset(centerX - bandHalf, 0f),
+                            size = androidx.compose.ui.geometry.Size(bandHalf * 2f, heightValue),
+                        )
+
+                        // Draw ticks
+                        // Total ticks: we cover from -48 steps to +48 steps
+                        val centerStep = (sliderValue / 15f)
+                        val startTick = (centerStep - 20).roundToInt().coerceAtLeast(-48)
+                        val endTick = (centerStep + 20).roundToInt().coerceAtLeast(startTick).coerceAtMost(48)
+
+                        for (tick in startTick..endTick) {
+                            // Calculate position based on the scrolling center offsets
+                            val itemX = centerX + (tick - centerStep) * tickSpacingPx
+
+                            val isHourTick = tick % 4 == 0
+                            val isHalfHourTick = tick % 2 == 0
+
+                            val tickLen = when {
+                                isHourTick -> 24.dp.toPx()
+                                isHalfHourTick -> 16.dp.toPx()
+                                else -> 8.dp.toPx()
+                            }
+
+                            // Brightened so even the minor 15-min ticks stay visible over glass.
+                            val color = when {
+                                isHourTick -> onSurfaceColor.copy(alpha = 0.95f)
+                                isHalfHourTick -> onSurfaceColor.copy(alpha = 0.65f)
+                                else -> onSurfaceColor.copy(alpha = 0.4f)
+                            }
+
+                            val strokeWidth = when {
+                                isHourTick -> 2.5.dp.toPx()
+                                else -> 1.5.dp.toPx()
+                            }
+
+                            // Draw tick lines hanging downwards from top or upwards from bottom
+                            drawLine(
+                                color = color,
+                                start = Offset(itemX, heightValue - tickLen),
+                                end = Offset(itemX, heightValue),
+                                strokeWidth = strokeWidth,
+                                cap = StrokeCap.Round
+                            )
+
+                            // Label the major Hour tick marks with offsets or localized equivalents
+                            if (isHourTick) {
+                                val offsetHours = (tick * 15 / 60)
+                                val text = when {
+                                    offsetHours > 0 -> "+${offsetHours}h"
+                                    offsetHours < 0 -> "${offsetHours}h"
+                                    else -> "Live"
+                                }
+
+                                val textLayout = textMeasurer.measure(
+                                    text = text,
+                                    style = labelStyle
+                                )
+
+                                drawText(
+                                    textLayoutResult = textLayout,
+                                    topLeft = Offset(
+                                        x = itemX - (textLayout.size.width / 2f),
+                                        y = heightValue - tickLen - textLayout.size.height - 4
+                                    )
+                                )
+                            }
+                        }
+
+                        // Center indicator: a soft glow underlay + a crisp primary line so the
+                        // present-moment marker pops at any glass opacity.
+                        drawLine(
+                            color = primaryColor.copy(alpha = 0.35f),
+                            start = Offset(centerX, 0f),
+                            end = Offset(centerX, heightValue),
+                            strokeWidth = 7.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = primaryColor,
+                            start = Offset(centerX, 0f),
+                            end = Offset(centerX, heightValue),
+                            strokeWidth = 3.dp.toPx(),
+                            cap = StrokeCap.Square
+                        )
+                        // Caret at the top of the center line to anchor the eye on the selection.
+                        val caret = 6.dp.toPx()
+                        drawPath(
+                            path = androidx.compose.ui.graphics.Path().apply {
+                                moveTo(centerX - caret, 0f)
+                                lineTo(centerX + caret, 0f)
+                                lineTo(centerX, caret * 1.4f)
+                                close()
+                            },
+                            color = primaryColor,
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(10.dp))
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("-12 hrs", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = onSurfaceColor.copy(alpha = 0.7f))
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "Hold & drag to scrub · flick fast to jump hours",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = primaryColor
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text("+12 hrs", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = onSurfaceColor.copy(alpha = 0.7f))
+                }
+            }
+        }
+    }
+    }
+    }
+}

@@ -1,0 +1,41 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.env
+.env.local
+debug.keystore
+
+# Signing keys & secrets — never commit
+*.jks
+*.keystore
+keystore.properties
+
+# Firebase config (contains a restricted client API key) — keep out of public repo
+app/google-services.json
+
+# All module build outputs
+**/build/
+
+# Python tooling caches
+__pycache__/
+*.pyc
+
+# Internal product/engineering plan (not for public repo)
+meridian-app-plan.md
+
+# Stray extraction artifacts at repo root
+/META-INF/
+/com/

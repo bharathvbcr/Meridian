@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Meridian</string>
+
+    <!-- Launcher long-press shortcuts (§17) -->
+    <string name="shortcut_plan_short">Plan</string>
+    <string name="shortcut_plan_long">Plan a meeting</string>
+    <string name="shortcut_world_short">World</string>
+    <string name="shortcut_world_long">World clock</string>
+    <string name="shortcut_zone_short">Add zone</string>
+    <string name="shortcut_zone_long">Add a time zone</string>
+</resources>

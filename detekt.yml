@@ -1,0 +1,61 @@
+# detekt configuration
+build:
+  maxIssues: 0
+  excludeCorrectable: false
+
+complexity:
+  active: true
+  ComplexCondition:
+    active: true
+    threshold: 4
+  ComplexInterface:
+    active: true
+    threshold: 4
+  ComplexMethod:
+    active: true
+    threshold: 10
+    ignoreSingleExpressionFunction: true
+  CyclomaticComplexity:
+    active: true
+    threshold: 10
+    ignoreSimpleAccessors: true
+  LabeledExpression:
+    active: true
+  LargeClass:
+    active: true
+    threshold: 150
+  LongMethod:
+    active: true
+    threshold: 50
+  LongParameterList:
+    active: true
+    threshold: 6
+  MethodOverloading:
+    active: true
+    threshold: 6
+  NestedBlockDepth:
+    active: true
+    threshold: 4
+
+style:
+  active: true
+  ForbiddenComment:
+    active: true
+    values:
+      - 'TODO'
+      - 'FIXME'
+      - 'PLACEHOLDER'
+      - 'Lorem'
+      - 'Coming soon'
+    allowedPatterns: ''
+  ForbiddenMethodCall:
+    active: true
+    methods:
+      - 'kotlin.TODO'
+      - 'kotlin.NotImplementedError'
+  MaxLineLength:
+    active: true
+    maxLineLength: 120
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: false

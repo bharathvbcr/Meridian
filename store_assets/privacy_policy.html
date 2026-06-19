@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Meridian</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: #ffffff;
+      color: #1a1a1a;
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    header {
+      background: #1565C0;
+      color: #ffffff;
+      padding: 48px 24px 36px;
+      text-align: center;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      font-size: 0.95rem;
+      opacity: 0.85;
+    }
+
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    .intro-box {
+      background: #E3F2FD;
+      border-left: 4px solid #1565C0;
+      border-radius: 4px;
+      padding: 20px 24px;
+      margin-bottom: 40px;
+      font-size: 0.95rem;
+      color: #0d47a1;
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #1565C0;
+      margin-bottom: 14px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #E3F2FD;
+    }
+
+    p {
+      margin-bottom: 12px;
+      color: #333333;
+    }
+
+    ul {
+      margin: 8px 0 14px 22px;
+      color: #333333;
+    }
+
+    ul li {
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: #1565C0;
+      color: #ffffff;
+      text-align: left;
+      padding: 10px 14px;
+      font-weight: 600;
+    }
+
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid #e0e0e0;
+      vertical-align: top;
+    }
+
+    tr:nth-child(even) td {
+      background: #f5f9ff;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 12px;
+      margin-right: 4px;
+    }
+
+    .tag-none   { background: #e8f5e9; color: #2e7d32; }
+    .tag-local  { background: #fff8e1; color: #f57f17; }
+    .tag-cloud  { background: #fce4ec; color: #c62828; }
+    .tag-shared { background: #ede7f6; color: #4527a0; }
+
+    a {
+      color: #1565C0;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .contact-block {
+      background: #f5f5f5;
+      border-radius: 6px;
+      padding: 20px 24px;
+      font-size: 0.95rem;
+    }
+
+    .contact-block strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #1a1a1a;
+    }
+
+    footer {
+      text-align: center;
+      color: #888;
+      font-size: 0.85rem;
+      padding: 24px;
+      border-top: 1px solid #e0e0e0;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Meridian — Privacy Policy</h1>
+  <p>Effective date: June 18, 2026 &nbsp;|&nbsp; Package: com.firebase.meridian.wxqlpz</p>
+</header>
+
+<div class="container">
+
+  <div class="intro-box">
+    This policy is written in plain language. Meridian is a timezone and world clock app with AI-powered meeting planning. We collect very little data, no account is required, and we do not sell or monetize your information.
+  </div>
+
+  <!-- 1. Who We Are -->
+  <section id="who-we-are">
+    <h2>1. Who We Are</h2>
+    <p>Meridian is an independent Android app developed by a solo developer. The app is published on the Google Play Store and can be contacted at <a href="mailto:bharath.vbcr@gmail.com">bharath.vbcr@gmail.com</a>.</p>
+    <p>Meridian is a sibling app to <strong>ChronosFlow</strong> — both apps are developed and signed by the same developer. If you have ChronosFlow installed, Meridian can share task and event data with it (see Section 5).</p>
+  </section>
+
+  <!-- 2. What Data We Collect -->
+  <section id="data-collected">
+    <h2>2. What Data We Collect</h2>
+    <p>The table below summarizes every category of data the app touches and where it goes.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Data type</th>
+          <th>Collected?</th>
+          <th>Where it goes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Calendar events</strong><br>Requires <code>READ_CALENDAR</code> and <code>WRITE_CALENDAR</code> permissions</td>
+          <td><span class="tag tag-local">On-device</span></td>
+          <td>Read from and written to your device's local calendar only. Never transmitted to our servers.</td>
+        </tr>
+        <tr>
+          <td><strong>AI queries (text you type in the AI tab)</strong></td>
+          <td><span class="tag tag-local">On-device first</span> <span class="tag tag-cloud">Cloud fallback</span></td>
+          <td>Sent to on-device Gemini Nano first. If the on-device model is unavailable, the query is sent to Google's servers via Firebase AI Logic. Meridian itself does not store your queries — see Section 4 for Google's data handling.</td>
+        </tr>
+        <tr>
+          <td><strong>Timezone / city selections</strong></td>
+          <td><span class="tag tag-local">On-device</span></td>
+          <td>Stored in app preferences on your device only. Never transmitted.</td>
+        </tr>
+        <tr>
+          <td><strong>Meeting plans</strong></td>
+          <td><span class="tag tag-local">On-device</span></td>
+          <td>Stored locally. Optionally exported to your calendar or shared with ChronosFlow (see Section 5).</td>
+        </tr>
+        <tr>
+          <td><strong>Location / GPS</strong></td>
+          <td><span class="tag tag-none">Not collected</span></td>
+          <td>Meridian never requests location permission. You manually pick cities and timezones.</td>
+        </tr>
+        <tr>
+          <td><strong>Account / personal identity</strong></td>
+          <td><span class="tag tag-none">Not collected</span></td>
+          <td>No account, registration, email, or name is ever requested.</td>
+        </tr>
+        <tr>
+          <td><strong>Crash and performance telemetry</strong></td>
+          <td><span class="tag tag-cloud">Via Firebase</span></td>
+          <td>Firebase may automatically collect crash reports and basic performance metrics. See Section 4.</td>
+        </tr>
+        <tr>
+          <td><strong>Advertising identifiers</strong></td>
+          <td><span class="tag tag-none">Not collected</span></td>
+          <td>Meridian contains no advertising SDKs and does not access advertising IDs.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 3. How We Use the Data -->
+  <section id="how-we-use">
+    <h2>3. How We Use the Data</h2>
+    <p>Data is used solely to provide app functionality:</p>
+    <ul>
+      <li><strong>Calendar access</strong> — to display your existing events alongside world clocks and to create new meeting events when you choose to save a plan.</li>
+      <li><strong>AI queries</strong> — to generate responses in the AI assistant tab. Queries are processed transiently and are not used to train models or build profiles.</li>
+      <li><strong>Timezone selections</strong> — to remember your pinned clocks across app sessions.</li>
+      <li><strong>Crash data (Firebase)</strong> — to identify and fix bugs so the app works reliably.</li>
+    </ul>
+    <p>We do not use any data for advertising, profiling, or sale to third parties.</p>
+  </section>
+
+  <!-- 4. Data Sharing -->
+  <section id="data-sharing">
+    <h2>4. Data Sharing and Third Parties</h2>
+    <p>Meridian shares data only in the following specific situations:</p>
+
+    <h3 style="font-size:1rem; font-weight:600; color:#333; margin: 16px 0 8px;">Google / Firebase</h3>
+    <p>Meridian uses Firebase services provided by Google:</p>
+    <ul>
+      <li><strong>Firebase AI Logic (Gemini cloud fallback)</strong> — when on-device AI is unavailable, your AI query text is sent to Google's servers to generate a response. Google may retain this data subject to their own privacy policies.</li>
+      <li><strong>Firebase Crashlytics / Performance Monitoring</strong> — automatically collects anonymized crash reports and performance metrics to help us fix bugs. No personally identifiable information is attached.</li>
+    </ul>
+    <p>Google's privacy practices are described at <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">policies.google.com/privacy</a>.</p>
+
+    <h3 style="font-size:1rem; font-weight:600; color:#333; margin: 16px 0 8px;">ChronosFlow (Sibling App)</h3>
+    <p>If you have ChronosFlow (by the same developer) installed on your device, Meridian can share task and calendar event data with it via a local Android ContentProvider. This sharing:</p>
+    <ul>
+      <li>Only occurs if ChronosFlow is installed and both apps share the same developer signing key.</li>
+      <li>Happens entirely on-device — no data leaves your device as a result of this exchange.</li>
+      <li>Is limited to meeting/event records you create in Meridian.</li>
+    </ul>
+
+    <h3 style="font-size:1rem; font-weight:600; color:#333; margin: 16px 0 8px;">No Other Sharing</h3>
+    <p>We do not share your data with any analytics companies, advertisers, data brokers, or any third party not listed above. We do not sell your data.</p>
+  </section>
+
+  <!-- 5. Permissions -->
+  <section id="permissions">
+    <h2>5. Android Permissions Explained</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Permission</th>
+          <th>Why it is needed</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>READ_CALENDAR</code></td>
+          <td>Displays your existing calendar events alongside world clocks and meeting plans.</td>
+        </tr>
+        <tr>
+          <td><code>WRITE_CALENDAR</code></td>
+          <td>Creates new calendar events when you save a meeting plan.</td>
+        </tr>
+        <tr>
+          <td><code>SCHEDULE_EXACT_ALARM</code> / <code>USE_EXACT_ALARM</code></td>
+          <td>Fires precise reminders for scheduled meetings at the exact time you specify.</td>
+        </tr>
+        <tr>
+          <td><code>RECEIVE_BOOT_COMPLETED</code></td>
+          <td>Restores scheduled alarms after a device restart so reminders are not lost.</td>
+        </tr>
+        <tr>
+          <td>Wear OS / Companion permissions</td>
+          <td>Syncs world clock data to the Wear OS companion app.</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 6. Data Retention -->
+  <section id="data-retention">
+    <h2>6. Data Retention</h2>
+    <p>Meridian does not maintain a backend database. All user-generated data (timezone selections, pinned clocks, saved meeting plans) is stored locally on your device and is retained only as long as the app is installed.</p>
+    <p>Calendar events you asked Meridian to create are stored in your device's calendar app and managed by you directly through that app.</p>
+    <p>Firebase crash and performance data is retained by Google according to their standard Firebase data retention policies.</p>
+    <p>AI query text sent to Google's cloud (Gemini fallback) is handled under Google's privacy policy and is not retained by Meridian.</p>
+  </section>
+
+  <!-- 7. Your Rights -->
+  <section id="your-rights">
+    <h2>7. Your Rights and Choices</h2>
+    <p>Because Meridian holds no server-side user data, most data control actions are available directly on your device:</p>
+    <ul>
+      <li><strong>Delete all app data:</strong> Uninstall Meridian from your device. This removes all locally stored preferences, pinned clocks, and cached data.</li>
+      <li><strong>Revoke calendar access:</strong> Go to <em>Settings &rarr; Apps &rarr; Meridian &rarr; Permissions</em> and revoke the Calendar permission at any time. The app will continue to function for world clock features.</li>
+      <li><strong>Delete calendar events:</strong> Events created by Meridian in your calendar can be deleted directly in your calendar app.</li>
+      <li><strong>Firebase data:</strong> For requests related to data held by Google/Firebase, please refer to <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google's Privacy Policy</a>.</li>
+      <li><strong>Contact us:</strong> You may also email us at <a href="mailto:bharath.vbcr@gmail.com">bharath.vbcr@gmail.com</a> with any privacy-related requests.</li>
+    </ul>
+  </section>
+
+  <!-- 8. Children's Privacy -->
+  <section id="childrens-privacy">
+    <h2>8. Children's Privacy</h2>
+    <p>Meridian is not directed at children under the age of 13. We do not knowingly collect personal information from children under 13. If you believe a child under 13 has provided information through this app, please contact us at <a href="mailto:bharath.vbcr@gmail.com">bharath.vbcr@gmail.com</a> and we will take appropriate steps.</p>
+  </section>
+
+  <!-- 9. Security -->
+  <section id="security">
+    <h2>9. Security</h2>
+    <p>Because Meridian stores user data only on-device, the security of that data is governed by your device's operating system protections (Android sandbox, full-disk encryption if enabled). AI queries sent to Google's cloud are transmitted over HTTPS. We do not operate servers that store your personal data, so there is no central database that could be breached.</p>
+  </section>
+
+  <!-- 10. Changes to This Policy -->
+  <section id="policy-changes">
+    <h2>10. Changes to This Policy</h2>
+    <p>If we make material changes to this Privacy Policy, we will update the effective date at the top of this page and, where appropriate, notify users via the app or the Play Store listing. Continued use of Meridian after a change constitutes acceptance of the updated policy.</p>
+    <p>We encourage you to review this policy periodically. The most current version will always be available at the URL linked from the Meridian Play Store listing.</p>
+  </section>
+
+  <!-- 11. Contact -->
+  <section id="contact">
+    <h2>11. Contact Us</h2>
+    <p>If you have any questions, concerns, or requests about this Privacy Policy or the data practices described here, please contact:</p>
+    <div class="contact-block">
+      <strong>Meridian App — Developer Contact</strong>
+      Email: <a href="mailto:bharath.vbcr@gmail.com">bharath.vbcr@gmail.com</a>
+    </div>
+    <p style="margin-top: 14px;">We aim to respond to all privacy-related inquiries within 7 business days.</p>
+  </section>
+
+</div>
+
+<footer>
+  &copy; 2026 Meridian &nbsp;|&nbsp; Privacy Policy &nbsp;|&nbsp; Effective June 18, 2026
+</footer>
+
+</body>
+</html>

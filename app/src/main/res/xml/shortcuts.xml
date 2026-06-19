@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="plan"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_plan_short"
+        android:shortcutLongLabel="@string/shortcut_plan_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="meridian://plan"
+            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="world"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_world_short"
+        android:shortcutLongLabel="@string/shortcut_world_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="meridian://world"
+            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="addzone"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_zone_short"
+        android:shortcutLongLabel="@string/shortcut_zone_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="meridian://world"
+            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetClass="com.example.MainActivity" />
+    </shortcut>
+</shortcuts>

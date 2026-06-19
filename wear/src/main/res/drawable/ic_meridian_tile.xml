@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Self-contained Meridian badge for the Wear tile picker: a gradient disc with the white
+     wireframe globe and gold solar-noon marker, so it reads clearly at small sizes. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Gradient disc background -->
+    <path android:pathData="M54,6 a48,48 0 1,1 0,96 a48,48 0 1,1 0,-96 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="14"
+                android:startY="14"
+                android:endX="94"
+                android:endY="94">
+                <item android:offset="0.0" android:color="#FF0E4A72" />
+                <item android:offset="0.55" android:color="#FF0A3553" />
+                <item android:offset="1.0" android:color="#FF06283D" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- Globe rim -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round"
+        android:pathData="M54,30 a24,24 0 1,1 0,48 a24,24 0 1,1 0,-48 Z" />
+    <!-- Equator -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round"
+        android:pathData="M30,54 L78,54" />
+    <!-- Prime meridian -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round"
+        android:pathData="M54,30 L54,78" />
+    <!-- Curved meridian (longitude) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.2"
+        android:pathData="M54,30 a10,24 0 1,0 0,48 a10,24 0 1,0 0,-48" />
+    <!-- Solar-noon marker -->
+    <path
+        android:fillColor="#FFC857"
+        android:pathData="M54,25.5 a4.5,4.5 0 1,1 0,9 a4.5,4.5 0 1,1 0,-9 Z" />
+</vector>
