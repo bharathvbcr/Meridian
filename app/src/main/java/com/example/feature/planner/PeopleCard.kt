@@ -18,19 +18,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +53,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.core.data.Person
 import com.example.core.data.SavedZone
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassFormBottomSheet
+import com.example.core.designsystem.HourStepperRow
+import com.example.core.designsystem.PlannerCard
+import com.example.core.designsystem.meridianFilterChipColors
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 
@@ -76,8 +76,7 @@ internal fun PeopleCard(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    PlannerCard(modifier = modifier) {
             CardTitle(Icons.Default.Group, "People")
             Spacer(Modifier.height(12.dp))
             if (people.isEmpty()) {
@@ -92,7 +91,7 @@ internal fun PeopleCard(
                 people.forEach { person ->
                     FilterChip(
                         selected = selected[person.id] == true,
-                        onClick = { selected[person.id] = !(selected[person.id] ?: true) },
+                        onClick = { selected[person.id] = !(selected[person.id] ?: false) },
                         label = {
                             Text(
                                 if (person.name.isBlank()) person.displayLocation()
@@ -100,18 +99,15 @@ internal fun PeopleCard(
                             )
                         },
                         trailingIcon = {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Remove ${person.name}",
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable { onDeletePerson(person.id) }
-                            )
+                            IconButton(onClick = { onDeletePerson(person.id) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Remove ${person.name}",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        colors = meridianFilterChipColors()
                     )
                 }
             }
@@ -121,7 +117,6 @@ internal fun PeopleCard(
                 Spacer(Modifier.width(8.dp))
                 Text("Add person")
             }
-        }
     }
 
     if (showAddDialog) {
@@ -179,10 +174,11 @@ internal fun AddPersonDialog(
                 null, null, null
             )?.use { cursor ->
                 if (cursor.moveToFirst()) {
-                    cursor.getString(0)?.takeIf { it.isNotBlank() }?.let { name = it }
+                    cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME))
+                        ?.takeIf { it.isNotBlank() }?.let { name = it }
                 }
             }
-        }
+        }.onFailure { e -> android.util.Log.e("AddPersonDialog", "Contact query failed", e) }
     }
 
     val readContactsPermLauncher = rememberLauncherForActivityResult(
@@ -259,11 +255,12 @@ internal fun AddPersonDialog(
                 // DROP-UP: matching zones render ABOVE the field (inverted) so they rise toward the
                 // top of the dialog instead of dropping below the fold near the keyboard.
                 if (results.isNotEmpty()) {
+                    val zoneResultCardColors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
                     Card(
-                        shape = RoundedCornerShape(28.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                        ),
+                        shape = GlassDefaults.cardShape,
+                        colors = zoneResultCardColors,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
@@ -317,31 +314,22 @@ internal fun AddPersonDialog(
                 )
                 Spacer(Modifier.height(12.dp))
                 if (name.isNotBlank()) {
-                    HourStepperRow("Work start", workStart) { workStart = it }
-                    HourStepperRow("Work end", workEnd) { workEnd = it }
+                    HourStepperRow("Work start", workStart, onChange = { newStart ->
+                        workStart = newStart
+                        if (newStart >= workEnd) workEnd = (newStart + 1).coerceAtMost(23)
+                    })
+                    HourStepperRow("Work end", workEnd, onChange = { newEnd ->
+                        if (newEnd > workStart) workEnd = newEnd
+                    })
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Do not disturb", modifier = Modifier.weight(1f))
                         Switch(checked = dndEnabled, onCheckedChange = { dndEnabled = it })
                     }
                     if (dndEnabled) {
-                        HourStepperRow("DND start", dndStart) { dndStart = it }
-                        HourStepperRow("DND end", dndEnd) { dndEnd = it }
+                        HourStepperRow("DND start", dndStart, onChange = { dndStart = it })
+                        HourStepperRow("DND end", dndEnd, onChange = { dndEnd = it })
                     }
                 }
         },
     )
-}
-
-@Composable
-internal fun HourStepperRow(label: String, value: Int, onChange: (Int) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        IconButton(onClick = { onChange((value + 23) % 24) }) {
-            Icon(Icons.Default.Remove, contentDescription = "Decrease hour", modifier = Modifier.size(18.dp))
-        }
-        Text("%02d:00".format(value), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-        IconButton(onClick = { onChange((value + 1) % 24) }) {
-            Icon(Icons.Default.Add, contentDescription = "Increase hour", modifier = Modifier.size(18.dp))
-        }
-    }
 }

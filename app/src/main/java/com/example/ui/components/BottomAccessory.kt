@@ -31,10 +31,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.core.data.PlannedTask
 import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.LocalGlassOpacity
 import com.example.core.designsystem.Motion
 import com.example.core.designsystem.ScrubberGlass
-import com.example.core.designsystem.liquidGlass
 import com.example.core.notify.Reminders
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
@@ -72,29 +72,30 @@ fun BottomAccessory(
         modifier = modifier,
     ) {
         val task = next ?: return@AnimatedVisibility
-        Row(
+        LiquidGlassSurface(
+            hazeState = hazeState,
             modifier = Modifier
                 .navigationBarsPadding()
-                .padding(bottom = 96.dp, start = 24.dp, end = 24.dp)
-                .liquidGlass(
-                    hazeState = hazeState,
-                    shape = RoundedCornerShape(50),
-                    tintColor = androidx.compose.ui.graphics.Color.Transparent,
-                    borderWidth = 1.dp,
-                    borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                    frosted = ScrubberGlass.alphas(LocalGlassOpacity.current).frosted,
-                )
-                // Solid scrim over the glass shader so the next-event title and countdown stay
-                // legible, matching the time scrubber pills.
-                .background(
-                    color = GlassDefaults.accessoryPillTint,
-                    shape = RoundedCornerShape(50),
-                )
-                .padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+                .padding(bottom = 96.dp, start = 24.dp, end = 24.dp),
+            shape = RoundedCornerShape(50),
+            tintColor = androidx.compose.ui.graphics.Color.Transparent,
+            borderWidth = 1.dp,
+            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+            frosted = ScrubberGlass.alphas(LocalGlassOpacity.current).frosted,
         ) {
-            Icon(
+            Row(
+                modifier = Modifier
+                    // Solid scrim over the glass shader so the next-event title and countdown stay
+                    // legible, matching the time scrubber pills.
+                    .background(
+                        color = GlassDefaults.accessoryPillTint,
+                        shape = RoundedCornerShape(50),
+                    )
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Icon(
                 imageVector = Icons.Default.Schedule,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
@@ -114,6 +115,7 @@ fun BottomAccessory(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.error,
             )
+            }
         }
     }
 }

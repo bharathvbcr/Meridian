@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import android.widget.Toast
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -17,13 +15,13 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +31,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.core.designsystem.CardHeader
+import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.PlannerCard
+import com.example.core.designsystem.SectionHeader
+import com.example.core.designsystem.transparentCardColors
 import com.example.core.data.Person
 import com.example.core.data.PlannedTask
 import com.example.core.data.SavedZone
@@ -67,45 +70,19 @@ internal fun PlannerHeader() {
 
 @Composable
 internal fun SectionLabel(label: String, subtitle: String) {
-    Column(modifier = Modifier.padding(top = 16.dp, bottom = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(end = 8.dp)
-            )
-            androidx.compose.material3.HorizontalDivider(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                modifier = Modifier.weight(1f)
-            )
-        }
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-        )
-    }
+    SectionHeader(
+        title = label,
+        subtitle = subtitle,
+        style = MaterialTheme.typography.labelMedium,
+        titleColor = MaterialTheme.colorScheme.primary,
+        dividerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+        modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
+    )
 }
 
 @Composable
-internal fun plannerCardColors() = CardDefaults.cardColors(
-    containerColor = androidx.compose.ui.graphics.Color.Transparent
-)
-
-@Composable
 internal fun CardTitle(icon: ImageVector, title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-    }
+    CardHeader(icon = icon, title = title)
 }
 
 @Composable
@@ -113,9 +90,9 @@ internal fun SlotsEmptyState(
     modifier: Modifier = Modifier,
     hint: String = "No overlap found for this day. Try a different date with the arrows in Window, shorten the meeting duration, or deselect participants who are hard to reach.",
 ) {
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
+    Card(shape = GlassDefaults.cardShape, colors = transparentCardColors(), modifier = modifier) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
@@ -127,7 +104,7 @@ internal fun SlotsEmptyState(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "No workable slots on this day",
-                style = MaterialTheme.typography.titleSmall,
+                style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
                 textAlign = TextAlign.Center,
@@ -165,7 +142,7 @@ internal fun PlannedTaskRow(modifier: Modifier = Modifier,
             Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
         }
     }
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier.fillMaxWidth()) {
+    Card(shape = GlassDefaults.cardShape, colors = transparentCardColors(), modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -215,19 +192,17 @@ internal fun DetailsCard(modifier: Modifier = Modifier,
     title: String,
     onTitleChange: (String) -> Unit
 ) {
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            CardTitle(Icons.Default.Edit, "Details")
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = title,
-                onValueChange = onTitleChange,
-                label = { Text("Meeting Title") },
-                placeholder = { Text("e.g. Design Sync") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
+    PlannerCard(modifier = modifier) {
+        CardTitle(Icons.Default.Edit, "Details")
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = title,
+            onValueChange = onTitleChange,
+            label = { Text("Meeting Title") },
+            placeholder = { Text("e.g. Design Sync") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -238,6 +213,7 @@ internal fun localLocationLabel(savedZones: List<SavedZone>, localZoneId: String
     savedZones.localLocationLabel(localZoneId)
 
 /** Favorite pinned cities (not home) and favorite contacts offered on the Plan screen. */
+@Immutable
 internal data class PlannerParticipantPool(
     val zones: List<SavedZone>,
     val people: List<Person>,
@@ -304,6 +280,7 @@ internal fun isGroupSelected(
     return zoneOn || peopleOn
 }
 
+@Immutable
 internal data class ParticipantSlotLabel(
     val zoneId: String,
     val locationLabel: String,
@@ -313,6 +290,7 @@ internal data class ParticipantSlotLabel(
         if (names.isEmpty()) locationLabel else "${names.joinToString(", ")} · $locationLabel"
 }
 
+@Immutable
 internal data class ParticipantLocationGroup(
     val zoneId: String,
     val displayName: String,
@@ -321,7 +299,7 @@ internal data class ParticipantLocationGroup(
 )
 
 internal fun locationKey(zoneId: String, displayName: String): String =
-    "$zoneId\u0000${displayName.lowercase()}"
+    "$zoneId::${displayName.lowercase()}"
 
 internal fun buildParticipantLocationGroups(
     savedZones: List<SavedZone>,

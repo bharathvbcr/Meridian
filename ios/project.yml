@@ -1,0 +1,164 @@
+name: Meridian
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Meridian — XcodeGen spec (Xcode 27 / iOS 27 / watchOS 27 / Swift 6)
+#
+# Three targets:
+#   • MeridianApp     — the iOS application (all of MeridianApp/ + the App-Group-safe
+#                       Shared/ files), embeds the widget extension and the watch app.
+#   • MeridianWidget  — WidgetKit + ActivityKit extension (home-screen world clock,
+#                       Control Center "World times" control, EventCountdown Live
+#                       Activity). Links ONLY App-Group-safe code: the Shared/ files
+#                       plus a hand-picked set of app sources (SharedZoneStore,
+#                       TimeFormats, and the plain enums in Models) — never the
+#                       @MainActor view-model or the EventKit/Contacts/AI stack.
+#   • MeridianWatch   — watchOS companion app (pinned-zone list + next-event
+#                       countdown), fed over WatchConnectivity. Links the Shared/
+#                       value types only.
+#
+# Every target carries the App Group group.com.example.meridian so the SwiftData
+# store (groupContainer), the widget snapshot, and the Live Activity all share one
+# container.
+# ─────────────────────────────────────────────────────────────────────────────
+
+options:
+  bundleIdPrefix: com.example
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "27.0"
+    watchOS: "27.0"
+  groupSortPosition: top
+  generateEmptyDirectories: true
+
+# Project-wide build settings inherited by every target.
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_PREVIEWS: YES
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""           # set your Apple Developer team id here
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GENERATE_INFOPLIST_FILE: NO    # we provide explicit Info.plists below
+  configs:
+    # App Attest environment for PeerVerifier/DeviceCheck — substituted into
+    # Meridian.entitlements. Dev/TestFlight builds must attest against `development`.
+    Debug:
+      MERIDIAN_APP_ATTEST_ENV: development
+    Release:
+      MERIDIAN_APP_ATTEST_ENV: production
+
+targets:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # iOS application
+  # ───────────────────────────────────────────────────────────────────────────
+  MeridianApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "27.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian
+        PRODUCT_NAME: Meridian
+        INFOPLIST_FILE: MeridianApp/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MeridianApp/Resources/Meridian.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
+        SUPPORTS_MACCATALYST: NO
+        # GeoPlaceRepository talks to the system SQLite via the SQLite3 module map.
+        OTHER_LDFLAGS: "-lsqlite3"
+    sources:
+      - path: MeridianApp
+      # App-Group-safe value types shared with the widget and watch.
+      - path: Shared/SharedModels.swift
+      - path: Shared/EventCountdownAttributes.swift
+      # cities.db (bundled GeoNames/OpenFlights DB, ~211k cities, schema v2) lives alongside
+      # Info.plist in MeridianApp/Resources/ and is copied as a bundle resource automatically.
+    dependencies:
+      - target: MeridianWidget
+        embed: true
+      - target: MeridianWatch
+        embed: true
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # WidgetKit + ActivityKit extension
+  # ───────────────────────────────────────────────────────────────────────────
+  MeridianWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "27.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian.widget
+        PRODUCT_NAME: MeridianWidget
+        CODE_SIGN_ENTITLEMENTS: MeridianWidget/MeridianWidget.entitlements
+    sources:
+      - path: MeridianWidget
+      # Shared, App-Group-safe code. We list app sources explicitly (not the whole
+      # MeridianApp/ tree) so the extension never pulls in the @MainActor view-model,
+      # EventKit/Contacts, the AI stack, or the SwiftData @Model graph it must not link.
+      - path: Shared/EventCountdownAttributes.swift
+      - path: MeridianApp/Services/SharedZoneStore.swift
+      - path: MeridianApp/Core/TimeFormats.swift
+      # Models.swift references LocalView (MeetingSlot.localViews: [String: LocalView]).
+      # LocalView is a leaf enum (Int, Comparable, Sendable, CaseIterable) with no further
+      # dependencies, so it is App-Group-safe; compile it before Models so the type resolves.
+      - path: MeridianApp/Core/LocalView.swift
+      # TimeFormats references the plain HourCycle enum, which lives in Models.swift;
+      # compile Models so HourCycle/MapStyle/etc. resolve. The @Model classes link but
+      # are unused here (SwiftData is available to extensions on iOS 27).
+      - path: MeridianApp/Models/Models.swift
+    info:
+      path: MeridianWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Meridian Widget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # watchOS companion app
+  # ───────────────────────────────────────────────────────────────────────────
+  MeridianWatch:
+    type: application.watchapp2
+    platform: watchOS
+    deploymentTarget: "27.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian.watchkitapp
+        PRODUCT_NAME: MeridianWatch
+        CODE_SIGN_ENTITLEMENTS: MeridianWatch/MeridianWatch.entitlements
+        WATCHOS_DEPLOYMENT_TARGET: "27.0"
+        TARGETED_DEVICE_FAMILY: "4"      # Apple Watch
+        SDKROOT: watchos
+    sources:
+      - path: MeridianWatch
+      # Value types shared over WatchConnectivity (WatchSyncPayload / WatchZone / WatchEvent).
+      - path: Shared/SharedModels.swift
+    info:
+      path: MeridianWatch/Info.plist
+      properties:
+        CFBundleDisplayName: Meridian
+        WKApplication: true
+        # Companion linkage to the phone app (single-target watch app, Xcode 14+ style).
+        WKCompanionAppBundleIdentifier: com.example.meridian
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Schemes
+# ─────────────────────────────────────────────────────────────────────────────
+schemes:
+  Meridian:
+    build:
+      targets:
+        MeridianApp: all
+        MeridianWidget: all
+        MeridianWatch: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    archive:
+      config: Release

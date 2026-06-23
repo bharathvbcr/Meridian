@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,7 +33,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +52,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import dev.chrisbanes.haze.HazeState
 import com.example.core.designsystem.Motion
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.MeridianWordmark
 import androidx.compose.ui.unit.dp
@@ -70,11 +75,11 @@ fun PlanScreen(
     hazeState: HazeState = remember { HazeState() }
 ) {
     val context = LocalContext.current
-    val savedZones by viewModel.savedZones.collectAsState()
-    val people by viewModel.people.collectAsState()
-    val plannedTasks by viewModel.plannedTasks.collectAsState()
-    val settings by viewModel.settings.collectAsState()
-    val calendarEvents by viewModel.calendarEvents.collectAsState()
+    val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
+    val people by viewModel.people.collectAsStateWithLifecycle()
+    val plannedTasks by viewModel.plannedTasks.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val calendarEvents by viewModel.calendarEvents.collectAsStateWithLifecycle()
     val is24Hour = rememberIs24Hour(settings)
 
     val localZoneId = remember { ZoneId.systemDefault().id }
@@ -117,11 +122,11 @@ fun PlanScreen(
     val baseInstant = remember(selectedDateMillis, localZoneId) {
         startOfDayInstant(selectedDateMillis, localZoneId)
     }
-    val participants = remember(selected.toMap(), selectedPeople.toMap(), locationGroups, localZoneId) {
-        buildMeetingParticipants(localZoneId, locationGroups, selected, selectedPeople)
+    val participants by remember(locationGroups, localZoneId) {
+        derivedStateOf { buildMeetingParticipants(localZoneId, locationGroups, selected, selectedPeople) }
     }
-    val participantLabels = remember(selected.toMap(), selectedPeople.toMap(), locationGroups, localZoneId, localLocationName) {
-        buildSelectedParticipantLabels(localZoneId, localLocationName, locationGroups, selected, selectedPeople)
+    val participantLabels by remember(locationGroups, localZoneId, localLocationName) {
+        derivedStateOf { buildSelectedParticipantLabels(localZoneId, localLocationName, locationGroups, selected, selectedPeople) }
     }
     // All 24 hourly slots, ranked (fairest first) — drives the best-pick default and rotating series.
     val allSlots = remember(participants, baseInstant) {
@@ -142,8 +147,8 @@ fun PlanScreen(
         }
     }
     val defaultSlotInstant = rankedSlots.firstOrNull()?.utcStartInstant?.toJavaInstant()
-    // Reset the selection to the fairest hour whenever it falls outside the current day/filter.
-    LaunchedEffect(dialHours, defaultSlotInstant) {
+    // Reset the selection to the fairest hour whenever dialHours changes (defaultSlotInstant is derived from dialHours).
+    LaunchedEffect(dialHours) {
         val cur = selectedSlotInstant
         val valid = cur != null && dialHours.any { it.instant == cur && it.slot != null }
         if (!valid) selectedSlotInstant = defaultSlotInstant
@@ -179,10 +184,23 @@ fun PlanScreen(
         label = "planDialBottomPadding"
     )
 
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        snapshotFlow { lifecycleOwner.lifecycle.currentState }
+            .collect { state ->
+                if (state == Lifecycle.State.RESUMED) {
+                    calendarPermissionGranted = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.READ_CALENDAR
+                    ) == PackageManager.PERMISSION_GRANTED
+                }
+            }
+    }
+
     LaunchedEffect(selectedDateMillis, calendarPermissionGranted) {
         if (calendarPermissionGranted) {
-            val from = startOfDayInstant(selectedDateMillis, localZoneId).toEpochMilli()
-            viewModel.loadCalendarEvents(from, from + 7L * 24 * 60 * 60 * 1000)
+            val from = startOfDayInstant(selectedDateMillis, localZoneId)
+            val to = ZonedDateTime.ofInstant(from, ZoneId.of(localZoneId)).plusDays(7).toInstant()
+            viewModel.loadCalendarEvents(from.toEpochMilli(), to.toEpochMilli())
         }
     }
 
@@ -191,12 +209,13 @@ fun PlanScreen(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
+            // Clear the status bar with the real inset instead of a fixed top spacer.
+            .statusBarsPadding()
             // Keep the "Meeting Title" field clear of the keyboard, matching the World Clock screen.
             .imePadding()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item { Spacer(Modifier.height(56.dp)) }
         item {
             MeridianWordmark(
                 modifier = Modifier
@@ -206,15 +225,18 @@ fun PlanScreen(
         }
         item { PlannerHeader() }
         item {
+            LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             DetailsCard(
-                modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                modifier = Modifier.fillMaxWidth(),
                 title = meetingTitle,
                 onTitleChange = { meetingTitle = it }
             )
+            }
         }
         item {
+            LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             ParticipantsCard(
-                modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                modifier = Modifier.fillMaxWidth(),
                 hazeState = hazeState,
                 locationGroups = locationGroups,
                 localZoneId = localZoneId,
@@ -242,10 +264,12 @@ fun PlanScreen(
                 defaultWorkStart = settings.defaultWorkStartHour,
                 defaultWorkEnd = settings.defaultWorkEndHour,
             )
+            }
         }
         item {
+            LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             WindowCard(
-                modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                modifier = Modifier.fillMaxWidth(),
                 hazeState = hazeState,
                 selectedDateMillis = selectedDateMillis,
                 durationMinutes = durationMinutes,
@@ -255,11 +279,13 @@ fun PlanScreen(
                 onExcludeWeekendsChange = { excludeWeekends = it },
                 onJumpClick = { showJumpModal = true }
             )
+            }
         }
         item { SectionLabel("YOUR CALENDAR", "Events from your device calendar.") }
         item {
+            LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             CalendarEventsCard(
-                modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                modifier = Modifier.fillMaxWidth(),
                 events = calendarEvents,
                 hasPermission = calendarPermissionGranted,
                 is24Hour = is24Hour,
@@ -267,6 +293,7 @@ fun PlanScreen(
                     calendarPermLauncher.launch(Manifest.permission.READ_CALENDAR)
                 },
             )
+            }
         }
         item { SectionLabel("FAIR SLOTS", "Scrub the dial to explore every hour — bands mark the fair ones.") }
 
@@ -284,16 +311,19 @@ fun PlanScreen(
                     else ->
                         "Every hour lands in someone's sleep window. Try another date or fewer zones."
                 }
+                LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
                 SlotsEmptyState(
-                    modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                    modifier = Modifier.fillMaxWidth(),
                     hint = emptyHint,
                 )
+                }
             }
         } else {
             selectedSlot?.let { slot ->
                 item {
+                    LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
                     SlotCard(
-                        modifier = Modifier.fillMaxWidth().liquidGlass(hazeState),
+                        modifier = Modifier.fillMaxWidth(),
                         slot = slot,
                         localZoneId = localZoneId,
                         localLocationName = localLocationName,
@@ -305,6 +335,7 @@ fun PlanScreen(
                         onToggle = {},
                         interactive = false,
                     )
+                    }
                 }
             }
             item {

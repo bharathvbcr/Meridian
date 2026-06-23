@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.IntSize
 import com.example.core.data.MapStyle
 import com.example.core.data.SavedZone
 import com.example.core.designsystem.GlassDefaults
-import com.example.core.designsystem.liquidGlass
+import com.example.core.designsystem.liquidGlassBackdrop
 import com.example.core.time.SolarMath
 import com.example.core.time.ZoneCoordinates
 import dev.chrisbanes.haze.HazeState
@@ -135,23 +135,26 @@ fun DayNightMap(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f)
-                .then(
-                    if (isVector) {
-                        Modifier.liquidGlass(
-                            hazeState = hazeState,
-                            shape = mapShape,
-                            tintColor = GlassDefaults.cardTint,
-                        )
-                    } else {
-                        Modifier.clip(mapShape)
-                    }
-                )
+                .clip(mapShape)
                 .onSizeChanged { canvasSize = it }
                 .semantics {
                     contentDescription = "World day and night map. Sun is overhead near " +
                         "latitude ${subsolar.latitude.toInt()}, longitude ${subsolar.longitude.toInt()} degrees."
                 }
         ) {
+            // Vector mode gets the full liquid-glass surface as a backdrop layer *behind* the map
+            // canvas, so the refraction warps only the blurred backdrop, never the map or its pins.
+            if (isVector) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .liquidGlassBackdrop(
+                            hazeState = hazeState,
+                            shape = mapShape,
+                            tintColor = GlassDefaults.cardTint,
+                        )
+                )
+            }
             Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height

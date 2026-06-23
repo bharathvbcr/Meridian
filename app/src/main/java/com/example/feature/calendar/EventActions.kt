@@ -65,7 +65,7 @@ fun shareEventIcs(
         zoneId = zoneId,
     )
     val dir = File(context.cacheDir, "invites").apply { mkdirs() }
-    val file = File(dir, "meridian-invite-${startInstant.toEpochMilli()}.ics")
+    val file = File(dir, "meridian-invite.ics")
     file.writeText(ics)
 
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)

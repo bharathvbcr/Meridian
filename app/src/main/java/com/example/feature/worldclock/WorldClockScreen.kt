@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -93,15 +94,18 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextAlign
+import com.example.core.designsystem.ExpressiveShapes
 import com.example.core.designsystem.GlassBottomSheet
 import com.example.core.designsystem.GlassCard
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.MeridianWordmark
 import com.example.core.designsystem.liquidGlass
+import com.example.core.designsystem.transparentCardColors
 import dev.chrisbanes.haze.HazeState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -135,6 +139,9 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
+private fun safeZoneId(id: String): ZoneId =
+    runCatching { ZoneId.of(id) }.getOrElse { ZoneId.of("UTC") }
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WorldClockScreen(
@@ -142,10 +149,10 @@ fun WorldClockScreen(
     modifier: Modifier = Modifier,
     hazeState: dev.chrisbanes.haze.HazeState = remember { dev.chrisbanes.haze.HazeState() }
 ) {
-    val savedZones by viewModel.savedZones.collectAsState()
-    val scrubInstant by viewModel.scrubInstant.collectAsState()
-    val settings by viewModel.settings.collectAsState()
-    val people by viewModel.people.collectAsState()
+    val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
+    val scrubInstant by viewModel.scrubInstant.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val people by viewModel.people.collectAsStateWithLifecycle()
     val is24Hour = rememberIs24Hour(settings)
 
     val haptics = LocalHapticFeedback.current
@@ -165,7 +172,7 @@ fun WorldClockScreen(
     // Keep the local draggable list in sync with the VM whenever the data changes — but never
     // mid-drag, or the list would yank out from under the finger.
     LaunchedEffect(savedZones) {
-        if (!isDragging) {
+        if (draggingKey == null) {
             localWatchlistZones = savedZones.filter { !it.isNowAnchor() }
         }
     }
@@ -183,9 +190,9 @@ fun WorldClockScreen(
     // reachable without permanently covering the zone list.
     val listState = rememberLazyListState()
     var dialVisible by remember { mutableStateOf(true) }
-    var prevIndex by remember { mutableIntStateOf(0) }
-    var prevOffset by remember { mutableIntStateOf(0) }
     LaunchedEffect(listState) {
+        var prevIndex = 0
+        var prevOffset = 0
         snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
             .collect { (index, offset) ->
                 dialVisible = when {
@@ -214,7 +221,7 @@ fun WorldClockScreen(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = 48.dp)
+            .statusBarsPadding()
             .imePadding()
             .pointerInput(listState) {
                 // Distinguishes a reorder from a "hold still" gesture: any real drag flips this true,
@@ -338,7 +345,7 @@ fun WorldClockScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(28.dp)
+                shape = GlassDefaults.cardShape
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -369,7 +376,7 @@ fun WorldClockScreen(
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             showCityPicker = true
                         },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = ExpressiveShapes.small,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Search, contentDescription = null)
@@ -451,7 +458,7 @@ fun WorldClockScreen(
             }
         anchorZones.forEach { anchorZone ->
             item(key = anchorZone.id) {
-                val zoneTime = ZonedDateTime.ofInstant(baseInstant, ZoneId.of(anchorZone.id))
+                val zoneTime = ZonedDateTime.ofInstant(baseInstant, safeZoneId(anchorZone.id))
                 ZoneComparisonRow(
                     zoneName = anchorZone.displayName,
                     zoneId = anchorZone.id,
@@ -488,7 +495,7 @@ fun WorldClockScreen(
 
         // Main Board locations list — drag-to-reorder over non-anchor zones.
         itemsIndexed(localWatchlistZones, key = { _, zone -> zone.id }) { _, zone ->
-            val zoneTime = ZonedDateTime.ofInstant(baseInstant, ZoneId.of(zone.id))
+            val zoneTime = ZonedDateTime.ofInstant(baseInstant, safeZoneId(zone.id))
             val isDraggedItem = draggingKey == zone.id
             ZoneComparisonRow(
                 zoneName = zone.displayName,
@@ -553,7 +560,7 @@ fun WorldClockScreen(
             }
             orphanContactGroups.forEach { group ->
                 item(key = "contact-${group.zoneId}-${group.displayName}") {
-                    val zoneTime = ZonedDateTime.ofInstant(baseInstant, ZoneId.of(group.zoneId))
+                    val zoneTime = ZonedDateTime.ofInstant(baseInstant, safeZoneId(group.zoneId))
                     ZoneComparisonRow(
                         zoneName = group.displayName,
                         zoneId = group.zoneId,
@@ -606,6 +613,7 @@ fun WorldClockScreen(
         com.example.core.designsystem.TimelineScrubber(
             scrubInstant = scrubInstant,
             hazeState = hazeState,
+            is24Hour = is24Hour,
             onScrubTimeChanged = { targetInstant ->
                 viewModel.selectScrubTime(targetInstant)
             }
@@ -759,7 +767,7 @@ private fun WorldCityPickerSheet(
                         .heightIn(max = 360.dp)
                 ) {
                     itemsIndexed(results, key = { _, it -> it.id }) { index, result ->
-                        val resultTimeText = ZonedDateTime.ofInstant(baseInstant, ZoneId.of(result.id))
+                        val resultTimeText = ZonedDateTime.ofInstant(baseInstant, safeZoneId(result.id))
                             .format(TimeFormats.hourMinute(is24Hour))
                         Row(
                             modifier = Modifier
@@ -841,7 +849,7 @@ fun ZoneComparisonRow(
     modifier: Modifier = Modifier
 ) {
     val timeFormatter = remember(is24Hour) { TimeFormats.hourMinute(is24Hour) }
-    val isWorkingHours = time.hour in workStartHour..workEndHour
+    val isWorkingHours = time.hour in workStartHour until workEndHour
 
     // Intentional day/night / working-hours tint — kept as-is (not unified to GlassDefaults.cardTint).
     val containerColor = if (isWorkingHours) {
@@ -852,10 +860,15 @@ fun ZoneComparisonRow(
 
     val textColor = MaterialTheme.colorScheme.onSurface
 
-    val isDaylight = remember(zoneId, time) {
+    val isDaylight = remember(zoneId, time.toLocalDate()) {
         val coord = ZoneCoordinates.coordinateFor(zoneId, time.toInstant())
         SolarMath.isDaylight(coord.latitude, coord.longitude, time.toInstant())
     }
+
+    // Pre-compute glow brush once per isDaylight change; drawBehind runs outside composable scope.
+    val daylightGlow = GlassDefaults.daylightGlow
+    val nightGlow = GlassDefaults.nightGlow
+    val glowColor = if (isDaylight) daylightGlow.copy(alpha = 0.22f) else nightGlow.copy(alpha = 0.22f)
 
     var expanded by remember { mutableStateOf(false) }
     var showAddContactDialog by remember { mutableStateOf(false) }
@@ -895,11 +908,6 @@ fun ZoneComparisonRow(
                     blur = false
                 )
                 .drawBehind {
-                    val glowColor = if (isDaylight) {
-                        Color(0xFFFFB703).copy(alpha = 0.22f)
-                    } else {
-                        Color(0xFF219EBC).copy(alpha = 0.22f)
-                    }
                     drawCircle(
                         brush = androidx.compose.ui.graphics.Brush.radialGradient(
                             colors = listOf(glowColor, Color.Transparent),
@@ -910,7 +918,7 @@ fun ZoneComparisonRow(
                         radius = size.width * 0.6f
                     )
                 },
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            colors = transparentCardColors()
         ) {
         Column(modifier = Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -927,7 +935,7 @@ fun ZoneComparisonRow(
                         Icon(
                             imageVector = Icons.Filled.Star,
                             contentDescription = "Favorite",
-                            tint = Color(0xFFFFD166),
+                            tint = GlassDefaults.daylightAccent,
                             modifier = Modifier.size(14.dp)
                         )
                     }
@@ -935,7 +943,7 @@ fun ZoneComparisonRow(
                     Icon(
                         imageVector = if (isDaylight) Icons.Default.WbSunny else Icons.Default.NightsStay,
                         contentDescription = if (isDaylight) "Daytime" else "Nighttime",
-                        tint = if (isDaylight) Color(0xFFFFD166) else Color(0xFF90D2FF),
+                        tint = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
                         modifier = Modifier.size(16.dp)
                     )
                     if (isHome) {
@@ -983,7 +991,7 @@ fun ZoneComparisonRow(
                                     Icon(
                                         imageVector = Icons.Filled.Star,
                                         contentDescription = null,
-                                        tint = Color(0xFFFFD166),
+                                        tint = GlassDefaults.daylightAccent,
                                         modifier = Modifier.size(10.dp)
                                     )
                                     Text(
@@ -1144,7 +1152,7 @@ fun ZoneComparisonRow(
                                 Icon(
                                     imageVector = if (person.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                     contentDescription = if (person.isFavorite) "Unstar" else "Star",
-                                    tint = if (person.isFavorite) Color(0xFFFFD166)
+                                    tint = if (person.isFavorite) GlassDefaults.daylightAccent
                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -1184,7 +1192,7 @@ fun ZoneComparisonRow(
         DropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = onDismissMenu,
-            shape = RoundedCornerShape(22.dp),
+            shape = GlassDefaults.menuShape,
             containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
@@ -1193,7 +1201,7 @@ fun ZoneComparisonRow(
             // backdrop at the wrong coordinates. The translucent tint + border still reads as glass.
             modifier = Modifier.liquidGlass(
                 hazeState = hazeState,
-                shape = RoundedCornerShape(22.dp),
+                shape = GlassDefaults.menuShape,
                 tintColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
                 borderColor = Color.White.copy(alpha = 0.25f),
                 blur = false
@@ -1211,7 +1219,7 @@ fun ZoneComparisonRow(
                         Icon(
                             imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = null,
-                            tint = Color(0xFFFFD166)
+                            tint = GlassDefaults.daylightAccent
                         )
                     }
                 )

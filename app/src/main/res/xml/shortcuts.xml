@@ -8,7 +8,7 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:data="meridian://plan"
-            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetPackage="com.Meridian.VBCR"
             android:targetClass="com.example.MainActivity" />
     </shortcut>
     <shortcut
@@ -19,7 +19,7 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:data="meridian://world"
-            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetPackage="com.Meridian.VBCR"
             android:targetClass="com.example.MainActivity" />
     </shortcut>
     <shortcut
@@ -30,7 +30,7 @@
         <intent
             android:action="android.intent.action.VIEW"
             android:data="meridian://world"
-            android:targetPackage="com.firebase.meridian.wxqlpz"
+            android:targetPackage="com.Meridian.VBCR"
             android:targetClass="com.example.MainActivity" />
     </shortcut>
 </shortcuts>

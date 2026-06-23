@@ -1,5 +1,6 @@
 package com.example.feature.planner
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -50,7 +51,7 @@ import com.example.core.designsystem.LocalGlassOpacity
 import com.example.core.designsystem.ScrubberGlass
 import com.example.core.designsystem.ScrubberPillDefaults
 import com.example.core.designsystem.detectScrubberPressDrag
-import com.example.core.designsystem.liquidGlass
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.time.FindOverlapUseCase.OverlapSlot
 import com.example.core.time.TimeFormats
 import dev.chrisbanes.haze.HazeState
@@ -62,6 +63,7 @@ import kotlin.math.abs
  * One hour of the planning window. [slot] is null when the hour is filtered out (e.g. a weekend
  * with "Exclude weekends" on) — those render as muted, non-selectable bands.
  */
+@Immutable
 internal data class DialHour(
     val instant: java.time.Instant,
     val slot: OverlapSlot?,
@@ -149,6 +151,22 @@ internal fun FairSlotsScrubber(
 
     val gestureContext = remember { object { var wasExpandedAtStart = false } }
 
+    // Hoist textMeasurer, labelStyle, and pre-measured tick layouts to composable scope so the
+    // Canvas draw lambda never calls TextMeasurer.measure() at 60-120 fps during drag.
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = remember(onSurfaceColor) {
+        TextStyle(
+            color = onSurfaceColor.copy(alpha = 0.85f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+    val tickLayouts = remember(tickLabels, labelStyle) {
+        tickLabels.map { label ->
+            label?.let { textMeasurer.measure(it, style = labelStyle) }
+        }
+    }
+
     fun nearestSelectable(target: Int): Int {
         val clamped = target.coerceIn(0, hours.lastIndex)
         if (hours[clamped].slot != null) return clamped
@@ -174,7 +192,7 @@ internal fun FairSlotsScrubber(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .pointerInput(hours.size) {
+            .pointerInput(hours) {
                 detectScrubberPressDrag(
                     onPressStart = {
                         gestureContext.wasExpandedAtStart = expanded
@@ -194,7 +212,6 @@ internal fun FairSlotsScrubber(
                         dialPressed = false
                         interactionTick++
                         if (!dragged && gestureContext.wasExpandedAtStart) {
-                            interactionTick++
                             val idx = (releasePosition.x / size.width * hours.size).toInt()
                             selectAt(idx)
                         }
@@ -212,33 +229,34 @@ internal fun FairSlotsScrubber(
     ) { isExpanded ->
         if (!isExpanded) {
             // ---- Collapsed pill ----
-            Box(
+            LiquidGlassSurface(
+                hazeState = hazeState,
                 modifier = Modifier
                     .wrapContentWidth(Alignment.CenterHorizontally)
-                    .defaultMinSize(
-                        minWidth = ScrubberPillDefaults.minWidth,
-                        minHeight = ScrubberPillDefaults.minHeight,
-                    )
-                    .scale(pillScale)
-                    .clip(RoundedCornerShape(28.dp))
-                    .liquidGlass(
-                        hazeState = hazeState,
-                        shape = RoundedCornerShape(28.dp),
-                        tintColor = Color.Transparent,
-                        borderWidth = 1.dp,
-                        borderColor = optimalColor.copy(alpha = 0.4f),
-                        frosted = scrubberGlass.frosted,
-                    )
-                    .background(
-                        color = cardSurfaceColor.copy(alpha = scrubberGlass.pillTint),
-                        shape = RoundedCornerShape(28.dp),
-                    )
-                    .padding(
-                        horizontal = ScrubberPillDefaults.horizontalPadding,
-                        vertical = ScrubberPillDefaults.verticalPadding,
-                    )
+                    .scale(pillScale),
+                shape = GlassDefaults.cardShape,
+                tintColor = Color.Transparent,
+                borderWidth = 1.dp,
+                borderColor = optimalColor.copy(alpha = 0.4f),
+                frosted = scrubberGlass.frosted,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier
+                        .defaultMinSize(
+                            minWidth = ScrubberPillDefaults.minWidth,
+                            minHeight = ScrubberPillDefaults.minHeight,
+                        )
+                        // Legibility scrim on the content layer, above the backdrop refraction.
+                        .background(
+                            color = cardSurfaceColor.copy(alpha = scrubberGlass.pillTint),
+                            shape = GlassDefaults.cardShape,
+                        )
+                        .padding(
+                            horizontal = ScrubberPillDefaults.horizontalPadding,
+                            vertical = ScrubberPillDefaults.verticalPadding,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Icon(
                         imageVector = Icons.Default.Tune,
                         contentDescription = "Open fair-time dial",
@@ -253,17 +271,18 @@ internal fun FairSlotsScrubber(
                         color = onSurfaceColor.copy(alpha = 0.9f)
                     )
                     selected.ratingLabel?.let { label ->
+                        val badgeColor = ratingColor(label)
                         Spacer(Modifier.width(10.dp))
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(50))
-                                .background(ratingColor(label).copy(alpha = 0.18f))
-                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                                .background(badgeColor.copy(alpha = 0.18f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
                         ) {
                             Text(
                                 text = label,
                                 style = MaterialTheme.typography.labelMedium,
-                                color = ratingColor(label),
+                                color = badgeColor,
                                 fontWeight = FontWeight.Bold
                             )
                         }
@@ -274,25 +293,25 @@ internal fun FairSlotsScrubber(
         }
 
         // ---- Expanded dial ----
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .liquidGlass(
-                    hazeState = hazeState,
-                    shape = RoundedCornerShape(24.dp),
-                    tintColor = Color.Transparent,
-                    borderWidth = 1.5.dp,
-                    borderColor = optimalColor.copy(alpha = 0.5f),
-                    frosted = scrubberGlass.frosted,
-                )
-                .background(
-                    color = cardSurfaceColor.copy(alpha = scrubberGlass.cardTint),
-                    shape = RoundedCornerShape(24.dp),
-                )
-                .padding(20.dp)
+        LiquidGlassSurface(
+            hazeState = hazeState,
+            modifier = Modifier.fillMaxWidth(),
+            shape = GlassDefaults.cardShape,
+            tintColor = Color.Transparent,
+            borderWidth = 1.5.dp,
+            borderColor = optimalColor.copy(alpha = 0.5f),
+            frosted = scrubberGlass.frosted,
         ) {
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    // Legibility scrim on the content layer, above the backdrop refraction.
+                    .background(
+                        color = cardSurfaceColor.copy(alpha = scrubberGlass.cardTint),
+                        shape = GlassDefaults.cardShape,
+                    )
+                    .padding(20.dp)
+            ) {
                 Text(
                     text = "Fair-time dial",
                     style = MaterialTheme.typography.titleMedium,
@@ -308,13 +327,6 @@ internal fun FairSlotsScrubber(
                 )
 
                 Spacer(Modifier.height(16.dp))
-
-                val labelStyle = TextStyle(
-                    color = onSurfaceColor.copy(alpha = 0.85f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                val textMeasurer = rememberTextMeasurer()
 
                 Box(
                     modifier = Modifier
@@ -359,9 +371,8 @@ internal fun FairSlotsScrubber(
                         )
 
                         // Sparse hour labels under the track.
-                        tickLabels.forEachIndexed { i, label ->
-                            if (label != null) {
-                                val layout = textMeasurer.measure(label, style = labelStyle)
+                        tickLayouts.forEachIndexed { i, layout ->
+                            if (layout != null) {
                                 drawText(
                                     textLayoutResult = layout,
                                     topLeft = Offset(

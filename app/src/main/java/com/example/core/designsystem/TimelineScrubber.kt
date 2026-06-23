@@ -134,7 +134,8 @@ fun TimelineScrubber(
     scrubInstant: Instant?,
     hazeState: HazeState,
     onScrubTimeChanged: (Instant?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    is24Hour: Boolean = false,
 ) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
@@ -162,13 +163,42 @@ fun TimelineScrubber(
     val cardSurfaceColor = GlassDefaults.scrubberCardTone
     val glassOpacity = LocalGlassOpacity.current
     val scrubberGlass = remember(glassOpacity) { ScrubberGlass.alphas(glassOpacity) }
-    val labelStyle = TextStyle(
-        color = onSurfaceColor.copy(alpha = 0.85f),
-        fontSize = 10.sp,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center
-    )
-    val readoutFormatter = remember { DateTimeFormatter.ofPattern("hh:mm a · EEE, MMM d") }
+    val labelStyle = remember(onSurfaceColor) {
+        TextStyle(
+            color = onSurfaceColor.copy(alpha = 0.85f),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+    }
+    val readoutFormatter = remember(is24Hour) {
+        val timePat = if (is24Hour) "HH:mm" else "hh:mm a"
+        DateTimeFormatter.ofPattern("$timePat · EEE, MMM d")
+    }
+
+    // Pre-measure all 25 possible hour-offset labels so the Canvas draw lambda
+    // never allocates a TextLayoutResult at 60-120 fps during drag.
+    val tickTextLayouts = remember(textMeasurer, labelStyle) {
+        (-12..12).associate { h ->
+            val text = when {
+                h > 0 -> "+${h}h"
+                h < 0 -> "${h}h"
+                else -> "Live"
+            }
+            h to textMeasurer.measure(text, style = labelStyle)
+        }
+    }
+    // Hoist fixed px conversions out of the Canvas draw lambda (they never change between frames).
+    val hourTickLenPx = remember(density) { with(density) { 24.dp.toPx() } }
+    val halfTickLenPx = remember(density) { with(density) { 16.dp.toPx() } }
+    val qtrTickLenPx  = remember(density) { with(density) { 8.dp.toPx()  } }
+    val hourStrokePx  = remember(density) { with(density) { 2.5.dp.toPx() } }
+    val thinStrokePx  = remember(density) { with(density) { 1.5.dp.toPx() } }
+    val glowWidthPx   = remember(density) { with(density) { 7.dp.toPx()  } }
+    val centerWidthPx = remember(density) { with(density) { 3.dp.toPx()  } }
+    val caretSizePx   = remember(density) { with(density) { 6.dp.toPx()  } }
+    // Reuse a single Path instance; reset and repopulate each frame instead of allocating.
+    val caretPath     = remember { androidx.compose.ui.graphics.Path() }
 
     val totalSteps = 48 // −48..+48 quarter-hour steps span the ±12h range
 
@@ -311,34 +341,36 @@ fun TimelineScrubber(
     ) { isExpanded ->
         if (!isExpanded) {
             // ---- Collapsed pill ----
-            Box(
+            LiquidGlassSurface(
+                hazeState = hazeState,
                 modifier = Modifier
                     .wrapContentWidth(Alignment.CenterHorizontally)
-                    .defaultMinSize(
-                        minWidth = ScrubberPillDefaults.minWidth,
-                        minHeight = ScrubberPillDefaults.minHeight,
-                    )
                     .scale(pillScale)
-                    .clip(RoundedCornerShape(28.dp))
-                    .liquidGlass(
-                        hazeState = hazeState,
-                        shape = RoundedCornerShape(28.dp),
-                        tintColor = Color.Transparent,
-                        borderWidth = 1.dp,
-                        borderColor = primaryColor.copy(alpha = 0.4f),
-                        frosted = scrubberGlass.frosted,
-                    )
-                    .background(
-                        color = cardSurfaceColor.copy(alpha = scrubberGlass.pillTint),
-                        shape = RoundedCornerShape(28.dp),
-                    )
-                    .padding(
-                        horizontal = ScrubberPillDefaults.horizontalPadding,
-                        vertical = ScrubberPillDefaults.verticalPadding,
-                    )
-                    .testTag("timeline_scrubber_pill")
+                    .testTag("timeline_scrubber_pill"),
+                shape = GlassDefaults.cardShape,
+                tintColor = Color.Transparent,
+                borderWidth = 1.dp,
+                borderColor = primaryColor.copy(alpha = 0.4f),
+                frosted = scrubberGlass.frosted,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .defaultMinSize(
+                            minWidth = ScrubberPillDefaults.minWidth,
+                            minHeight = ScrubberPillDefaults.minHeight,
+                        )
+                        // Solid scrim over the glass so the pill stays legible (kept on the content
+                        // layer so it sits above the backdrop refraction and under the content).
+                        .background(
+                            color = cardSurfaceColor.copy(alpha = scrubberGlass.pillTint),
+                            shape = GlassDefaults.cardShape,
+                        )
+                        .padding(
+                            horizontal = ScrubberPillDefaults.horizontalPadding,
+                            vertical = ScrubberPillDefaults.verticalPadding,
+                        )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                     // Icon sits in a primary-tinted chip so the control reads as tappable chrome
                     // regardless of how transparent the glass behind it is.
                     Box(
@@ -402,35 +434,31 @@ fun TimelineScrubber(
                         }
                     }
                 }
+                }
             }
             return@AnimatedContent
         }
 
-    Card(
+    LiquidGlassSurface(
+        hazeState = hazeState,
         modifier = Modifier
             .fillMaxWidth()
             .testTag("timeline_scrubber_card"),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        shape = GlassDefaults.cardShape,
+        tintColor = Color.Transparent,
+        borderWidth = 1.5.dp,
+        borderColor = primaryColor.copy(alpha = 0.5f),
+        frosted = scrubberGlass.frosted,
     ) {
-        // Wrap with LiquidGlass backdrop blur
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .liquidGlass(
-                    hazeState = hazeState,
-                    shape = RoundedCornerShape(24.dp),
-                    tintColor = Color.Transparent,
-                    borderWidth = 1.5.dp,
-                    borderColor = primaryColor.copy(alpha = 0.5f),
-                    frosted = scrubberGlass.frosted,
-                )
-                // Solid Material You scrim laid *over* the glass refraction shader (which otherwise
-                // washes the tint toward the dark surface) and *under* the content, so the dial's
-                // text and ticks always sit on a legible, clearly-raised card.
+                // Solid Material You scrim laid *over* the backdrop glass (which otherwise washes
+                // the tint toward the dark surface) and *under* the content, so the dial's text and
+                // ticks always sit on a legible, clearly-raised card.
                 .background(
                     color = cardSurfaceColor.copy(alpha = scrubberGlass.cardTint),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = GlassDefaults.cardShape,
                 )
                 .padding(20.dp)
         ) {
@@ -534,9 +562,9 @@ fun TimelineScrubber(
                             val isHalfHourTick = tick % 2 == 0
 
                             val tickLen = when {
-                                isHourTick -> 24.dp.toPx()
-                                isHalfHourTick -> 16.dp.toPx()
-                                else -> 8.dp.toPx()
+                                isHourTick -> hourTickLenPx
+                                isHalfHourTick -> halfTickLenPx
+                                else -> qtrTickLenPx
                             }
 
                             // Brightened so even the minor 15-min ticks stay visible over glass.
@@ -547,8 +575,8 @@ fun TimelineScrubber(
                             }
 
                             val strokeWidth = when {
-                                isHourTick -> 2.5.dp.toPx()
-                                else -> 1.5.dp.toPx()
+                                isHourTick -> hourStrokePx
+                                else -> thinStrokePx
                             }
 
                             // Draw tick lines hanging downwards from top or upwards from bottom
@@ -563,24 +591,15 @@ fun TimelineScrubber(
                             // Label the major Hour tick marks with offsets or localized equivalents
                             if (isHourTick) {
                                 val offsetHours = (tick * 15 / 60)
-                                val text = when {
-                                    offsetHours > 0 -> "+${offsetHours}h"
-                                    offsetHours < 0 -> "${offsetHours}h"
-                                    else -> "Live"
-                                }
-
-                                val textLayout = textMeasurer.measure(
-                                    text = text,
-                                    style = labelStyle
-                                )
-
-                                drawText(
-                                    textLayoutResult = textLayout,
-                                    topLeft = Offset(
-                                        x = itemX - (textLayout.size.width / 2f),
-                                        y = heightValue - tickLen - textLayout.size.height - 4
+                                tickTextLayouts[offsetHours]?.let { textLayout ->
+                                    drawText(
+                                        textLayoutResult = textLayout,
+                                        topLeft = Offset(
+                                            x = itemX - (textLayout.size.width / 2f),
+                                            y = heightValue - tickLen - textLayout.size.height - 4
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
 
@@ -590,27 +609,23 @@ fun TimelineScrubber(
                             color = primaryColor.copy(alpha = 0.35f),
                             start = Offset(centerX, 0f),
                             end = Offset(centerX, heightValue),
-                            strokeWidth = 7.dp.toPx(),
+                            strokeWidth = glowWidthPx,
                             cap = StrokeCap.Round
                         )
                         drawLine(
                             color = primaryColor,
                             start = Offset(centerX, 0f),
                             end = Offset(centerX, heightValue),
-                            strokeWidth = 3.dp.toPx(),
+                            strokeWidth = centerWidthPx,
                             cap = StrokeCap.Square
                         )
-                        // Caret at the top of the center line to anchor the eye on the selection.
-                        val caret = 6.dp.toPx()
-                        drawPath(
-                            path = androidx.compose.ui.graphics.Path().apply {
-                                moveTo(centerX - caret, 0f)
-                                lineTo(centerX + caret, 0f)
-                                lineTo(centerX, caret * 1.4f)
-                                close()
-                            },
-                            color = primaryColor,
-                        )
+                        // Caret at the top of the center line — reuse the hoisted Path instance.
+                        caretPath.reset()
+                        caretPath.moveTo(centerX - caretSizePx, 0f)
+                        caretPath.lineTo(centerX + caretSizePx, 0f)
+                        caretPath.lineTo(centerX, caretSizePx * 1.4f)
+                        caretPath.close()
+                        drawPath(path = caretPath, color = primaryColor)
                     }
                 }
                 

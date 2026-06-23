@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.PersonAdd
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -59,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.data.Person
 import com.example.core.data.SavedZone
+import com.example.core.designsystem.PlannerCard
+import com.example.core.designsystem.meridianFilterChipColors
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -84,7 +85,10 @@ internal fun ParticipantsCard(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val allSelected by remember(locationGroups, selectedZones, selectedPeople) {
+    // selectedZones and selectedPeople are SnapshotStateMaps — derivedStateOf tracks their reads
+    // automatically. Including them as remember keys would recreate the derived state on every
+    // map mutation, defeating the purpose of derivedStateOf.
+    val allSelected by remember(locationGroups) {
         derivedStateOf {
             locationGroups.all { group ->
                 isGroupFullySelected(group, selectedZones, selectedPeople)
@@ -93,162 +97,155 @@ internal fun ParticipantsCard(
     }
     val hasFavorites = locationGroups.isNotEmpty() || people.isNotEmpty()
 
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    PlannerCard(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
+                Icon(
+                    imageVector = Icons.Default.Group,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        "Participants",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        "Starred cities and contacts from World Clock & Now",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    )
+                }
+            }
+            if (hasFavorites) {
+                TextButton(
+                    onClick = {
+                        val target = !allSelected
+                        locationGroups.forEach { group ->
+                            group.savedZone?.let { selectedZones[it.id] = target }
+                            group.people.forEach { selectedPeople[it.id] = target }
+                        }
+                    },
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
+                    Text(
+                        text = if (allSelected) "None" else "All",
+                        style = MaterialTheme.typography.labelMedium,
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(
-                            "Participants",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            "Starred cities and contacts from World Clock & Now",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                        )
-                    }
-                }
-                if (hasFavorites) {
-                    TextButton(
-                        onClick = {
-                            val target = !allSelected
-                            locationGroups.forEach { group ->
-                                group.savedZone?.let { selectedZones[it.id] = target }
-                                group.people.forEach { selectedPeople[it.id] = target }
-                            }
-                        },
-                    ) {
-                        Text(
-                            text = if (allSelected) "None" else "All",
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
                 }
             }
+        }
+        Spacer(Modifier.height(12.dp))
+        if (!hasFavorites) {
+            Text(
+                text = "Add cities and people here, or star them on World Clock or Now.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
             Spacer(Modifier.height(12.dp))
-            if (!hasFavorites) {
-                Text(
-                    text = "Add cities and people here, or star them on World Clock or Now.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
-                Spacer(Modifier.height(12.dp))
-            }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                itemVerticalAlignment = Alignment.CenterVertically,
-            ) {
-                FilterChip(
-                    selected = true,
-                    enabled = false,
-                    onClick = {},
-                    label = { Text("You · $localLocationName", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        disabledSelectedContainerColor = MaterialTheme.colorScheme.primary,
-                        disabledLabelColor = MaterialTheme.colorScheme.onPrimary
-                    )
-                )
-                if (hasFavorites) {
-                    locationGroups.forEach { group ->
-                        val groupSelected = isGroupSelected(group, selectedZones, selectedPeople)
-                        when {
-                            group.people.isEmpty() -> {
-                                FilterChip(
-                                    selected = groupSelected,
-                                    onClick = {
-                                        group.savedZone?.let { zone ->
-                                            selectedZones[zone.id] = !groupSelected
-                                        }
-                                    },
-                                    label = {
-                                        Text(
-                                            group.displayName,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    ),
-                                )
-                            }
-                            group.people.size == 1 -> {
-                                val person = group.people.first()
+        }
+        val youChipColors = FilterChipDefaults.filterChipColors(
+            disabledSelectedContainerColor = MaterialTheme.colorScheme.primary,
+            disabledLabelColor = MaterialTheme.colorScheme.onPrimary,
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = true,
+                enabled = false,
+                onClick = {},
+                label = { Text("You · $localLocationName", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                colors = youChipColors,
+            )
+            if (hasFavorites) {
+                locationGroups.forEach { group ->
+                    val groupSelected = isGroupSelected(group, selectedZones, selectedPeople)
+                    when {
+                        group.people.isEmpty() -> {
+                            FilterChip(
+                                selected = groupSelected,
+                                onClick = {
+                                    group.savedZone?.let { zone ->
+                                        selectedZones[zone.id] = !groupSelected
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        group.displayName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                colors = meridianFilterChipColors(),
+                            )
+                        }
+                        group.people.size == 1 -> {
+                            val person = group.people.first()
+                            PersonChip(
+                                label = groupChipLabel(group),
+                                selected = groupSelected,
+                                onToggle = {
+                                    val target = !groupSelected
+                                    group.savedZone?.let { selectedZones[it.id] = target }
+                                    selectedPeople[person.id] = target
+                                },
+                                onDelete = { onDeletePerson(person.id) },
+                            )
+                        }
+                        else -> {
+                            val cityChipSelected = isGroupFullySelected(group, selectedZones, selectedPeople)
+                            FilterChip(
+                                selected = cityChipSelected,
+                                onClick = {
+                                    val target = !cityChipSelected
+                                    group.savedZone?.let { selectedZones[it.id] = target }
+                                    group.people.forEach { selectedPeople[it.id] = target }
+                                },
+                                label = {
+                                    Text(
+                                        group.displayName,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                },
+                                colors = meridianFilterChipColors(),
+                            )
+                            group.people.forEach { person ->
                                 PersonChip(
-                                    label = groupChipLabel(group),
-                                    selected = groupSelected,
+                                    label = personChipLabel(person),
+                                    selected = selectedPeople[person.id] == true,
                                     onToggle = {
-                                        val target = !groupSelected
-                                        group.savedZone?.let { selectedZones[it.id] = target }
-                                        selectedPeople[person.id] = target
+                                        selectedPeople[person.id] = !(selectedPeople[person.id] ?: false)
+                                        if (selectedPeople[person.id] == true) {
+                                            group.savedZone?.let { selectedZones[it.id] = true }
+                                        }
                                     },
                                     onDelete = { onDeletePerson(person.id) },
                                 )
                             }
-                            else -> {
-                                val cityChipSelected = isGroupFullySelected(group, selectedZones, selectedPeople)
-                                FilterChip(
-                                    selected = cityChipSelected,
-                                    onClick = {
-                                        val target = !cityChipSelected
-                                        group.savedZone?.let { selectedZones[it.id] = target }
-                                        group.people.forEach { selectedPeople[it.id] = target }
-                                    },
-                                    label = {
-                                        Text(
-                                            group.displayName,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    },
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    ),
-                                )
-                                group.people.forEach { person ->
-                                    PersonChip(
-                                        label = personChipLabel(person),
-                                        selected = selectedPeople[person.id] == true,
-                                        onToggle = {
-                                            selectedPeople[person.id] = !(selectedPeople[person.id] ?: true)
-                                            if (selectedPeople[person.id] == true) {
-                                                group.savedZone?.let { selectedZones[it.id] = true }
-                                            }
-                                        },
-                                        onDelete = { onDeletePerson(person.id) },
-                                    )
-                                }
-                            }
                         }
                     }
                 }
-                FilterChip(
-                    selected = false,
-                    onClick = { showAddDialog = true },
-                    label = { Text("Add", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                    leadingIcon = {
-                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                    },
-                )
             }
+            FilterChip(
+                selected = false,
+                onClick = { showAddDialog = true },
+                label = { Text("Add", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
+            )
         }
     }
 
@@ -297,6 +294,8 @@ private fun PersonChip(
 
     val p = progress.value
     val baseLabel = if (selected) selectedLabel else unselectedLabel
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val strokeWidthPx = remember(density) { with(density) { 2.dp.toPx() } }
 
     Box(
         modifier = Modifier
@@ -316,7 +315,7 @@ private fun PersonChip(
                     drawRoundRect(
                         color = lerp(outlineColor.copy(alpha = 0.5f), errorColor, p),
                         cornerRadius = CornerRadius(size.height / 2),
-                        style = Stroke(width = 2.dp.toPx()),
+                        style = Stroke(width = strokeWidthPx),
                     )
                 }
                 if (p > 0f) {

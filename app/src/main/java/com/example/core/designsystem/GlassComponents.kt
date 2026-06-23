@@ -18,7 +18,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.core.designsystem.GlassUtils.applyGlassEffect
 import dev.chrisbanes.haze.HazeState
 
 @Composable
@@ -30,14 +29,13 @@ fun GlassCard(
     tintColor: Color = GlassDefaults.cardTint,
     content: @Composable () -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .applyGlassEffect(
-                hazeState = hazeState,
-                shape = shape,
-                borderWidth = borderWidth,
-                tintColor = tintColor
-            )
+    // Two-layer glass so the AGSL refraction warps only the backdrop, never this card's content.
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = modifier,
+        shape = shape,
+        borderWidth = borderWidth,
+        tintColor = tintColor,
     ) {
         content()
     }
@@ -50,29 +48,31 @@ fun GlassToolbar(
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .applyGlassEffect(
-                hazeState = hazeState,
-                shape = RoundedCornerShape(0.dp), // Toolbar usually bleeds to edges
-                borderWidth = 0.dp,
-                tintColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-            )
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(0.dp), // Toolbar usually bleeds to edges
+        borderWidth = 0.dp,
+        tintColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.align(Alignment.CenterStart)
-        )
-        Row(
-            modifier = Modifier.align(Alignment.CenterEnd),
-            verticalAlignment = Alignment.CenterVertically
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            actions()
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.CenterStart)
+            )
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                actions()
+            }
         }
     }
 }

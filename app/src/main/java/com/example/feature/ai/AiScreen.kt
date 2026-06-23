@@ -64,7 +64,6 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WbTwilight
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
@@ -84,8 +83,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -116,9 +115,13 @@ import com.example.MainViewModel
 import com.example.core.data.PlannedTask
 import com.example.core.data.SavedZone
 import com.example.core.designsystem.GlassDatePickerSheet
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassTimePickerSheet
+import com.example.core.designsystem.SectionHeader
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.rememberIs24Hour
+import com.example.core.designsystem.transparentCardColors
 import com.example.core.time.TimeFormats
 import com.example.feature.calendar.DEFAULT_EVENT_DURATION_MINUTES
 import com.example.feature.calendar.EventActionResult
@@ -148,11 +151,11 @@ fun AiScreen(
     modifier: Modifier = Modifier,
     hazeState: HazeState = remember { HazeState() }
 ) {
-    val chatMessages by viewModel.chatMessages.collectAsState()
-    val aiLoading by viewModel.aiLoading.collectAsState()
-    val pendingDraft by viewModel.pendingDraft.collectAsState()
-    val savedZones by viewModel.savedZones.collectAsState()
-    val settings by viewModel.settings.collectAsState()
+    val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
+    val aiLoading by viewModel.aiLoading.collectAsStateWithLifecycle()
+    val pendingDraft by viewModel.pendingDraft.collectAsStateWithLifecycle()
+    val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     val is24Hour = rememberIs24Hour(settings)
     val haptics = LocalHapticFeedback.current
 
@@ -203,7 +206,11 @@ fun AiScreen(
 
             // Tap-to-ask prompt starters.
             item {
-                SectionLabel("TRY ASKING", Icons.Default.Bolt)
+                SectionHeader(
+                    title = "TRY ASKING",
+                    icon = Icons.Default.Bolt,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
                 Spacer(Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
@@ -226,7 +233,13 @@ fun AiScreen(
                 }
             }
 
-            item { SectionLabel("CONVERSATION", Icons.Default.AutoAwesome) }
+            item {
+                SectionHeader(
+                    title = "CONVERSATION",
+                    icon = Icons.Default.AutoAwesome,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                )
+            }
 
             items(chatMessages, key = { it.id }) { message ->
                 Bubble(message = message, hazeState = hazeState, modifier = Modifier.animateItem())
@@ -358,33 +371,6 @@ private fun AssistantHeader(
     }
 }
 
-@Composable
-private fun SectionLabel(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickScheduleCard(
@@ -395,7 +381,7 @@ private fun QuickScheduleCard(
     onAdd: (PlannedTask) -> Unit,
 ) {
     val localZoneId = remember { ZoneId.systemDefault().id }
-    val nowZdt = remember { ZonedDateTime.now() }
+    val nowZdt = ZonedDateTime.now()
     val haptics = LocalHapticFeedback.current
 
     var expanded by remember { mutableStateOf(true) }
@@ -463,11 +449,9 @@ private fun QuickScheduleCard(
         }
     }
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .liquidGlass(hazeState),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = Modifier.fillMaxWidth(),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             // Header doubles as the collapse toggle so the card can fold away to focus on chat.
@@ -579,17 +563,13 @@ private fun QuickScheduleCard(
 
                     Spacer(Modifier.height(16.dp))
                     // Live preview of exactly what will be added.
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .liquidGlass(
-                                hazeState = hazeState,
-                                tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(14.dp)
-                            )
-                            .padding(14.dp)
+                    LiquidGlassSurface(
+                        hazeState = hazeState,
+                        modifier = Modifier.fillMaxWidth(),
+                        tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(14.dp),
                     ) {
-                        Column {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Text(
                                 text = title.ifBlank { "Untitled event" },
                                 style = MaterialTheme.typography.titleSmall,
@@ -758,17 +738,16 @@ private fun TypingIndicator(hazeState: HazeState) {
             )
         }
         Spacer(Modifier.width(8.dp))
-        Row(
-            modifier = Modifier
-                .liquidGlass(
-                    hazeState = hazeState,
-                    tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
-                    shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp)
-                )
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        LiquidGlassSurface(
+            hazeState = hazeState,
+            tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp),
         ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
             repeat(3) { i ->
                 val dotAlpha by transition.animateFloat(
                     initialValue = 0.3f,
@@ -787,6 +766,7 @@ private fun TypingIndicator(hazeState: HazeState) {
                         .background(MaterialTheme.colorScheme.onSurfaceVariant)
                 )
             }
+        }
         }
     }
 }
@@ -828,7 +808,7 @@ private fun ChatComposer(
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { onSend() }),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -865,25 +845,36 @@ private fun DraftConfirmCard(
     onDiscard: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val whenText = remember(draft, is24Hour) {
-        val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(draft.timestamp), ZoneId.of(draft.zoneId))
-        zdt.format(TimeFormats.hourMinuteWithContext(is24Hour))
+        runCatching {
+            val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(draft.timestamp), ZoneId.of(draft.zoneId))
+            zdt.format(TimeFormats.hourMinuteWithContext(is24Hour))
+        }.getOrElse { draft.zoneId }
     }
     val startInstant = remember(draft) { Instant.ofEpochMilli(draft.timestamp) }
     // Export the proposed meeting as a real calendar event; surface only failures (§12.6).
-    fun export(action: () -> EventActionResult) {
+    fun exportSync(action: () -> EventActionResult) {
         val result = action()
         if (result is EventActionResult.Failure) {
             Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
         }
     }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .liquidGlass(
-                hazeState = hazeState,
-                shape = RoundedCornerShape(28.dp)
-            )
+    // ICS export writes a file to cache — dispatch to IO to avoid blocking the UI thread.
+    fun exportIo(action: () -> EventActionResult) {
+        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val result = action()
+            if (result is EventActionResult.Failure) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    Toast.makeText(context, result.reason, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = Modifier.fillMaxWidth(),
+        shape = GlassDefaults.cardShape,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -907,7 +898,7 @@ private fun DraftConfirmCard(
                 Button(onClick = onConfirm, modifier = Modifier.weight(1f)) { Text("Add to plan") }
                 FilledTonalButton(
                     onClick = {
-                        export {
+                        exportSync {
                             insertCalendarEvent(context, draft.title, startInstant, DEFAULT_EVENT_DURATION_MINUTES, draft.zoneId)
                         }
                     },
@@ -922,7 +913,7 @@ private fun DraftConfirmCard(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
                     onClick = {
-                        export {
+                        exportIo {
                             shareEventIcs(context, draft.title, startInstant, DEFAULT_EVENT_DURATION_MINUTES, draft.zoneId)
                         }
                     },
@@ -939,7 +930,7 @@ private fun DraftConfirmCard(
 }
 
 @Composable
-fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifier = Modifier) {
+private fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifier = Modifier) {
     val isUser = message.isUser
     val isError = message.sender == "System Error"
     val alignment = if (isUser) Alignment.End else Alignment.Start
@@ -1047,16 +1038,16 @@ private fun InferenceSourceBadge(onDevice: Boolean, hazeState: HazeState, modifi
     val icon = if (onDevice) Icons.Default.Memory else Icons.Default.Cloud
     val tint = if (onDevice) MaterialTheme.colorScheme.primary
     else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-    Row(
-        modifier = modifier
-            .liquidGlass(
-                hazeState = hazeState,
-                tintColor = tint.copy(alpha = 0.07f),
-                shape = RoundedCornerShape(50)
-            )
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-        verticalAlignment = Alignment.CenterVertically
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = modifier,
+        tintColor = tint.copy(alpha = 0.07f),
+        shape = RoundedCornerShape(50),
     ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
         Icon(imageVector = icon, contentDescription = null, tint = tint, modifier = Modifier.size(12.dp))
         Spacer(Modifier.width(4.dp))
         Text(
@@ -1064,6 +1055,7 @@ private fun InferenceSourceBadge(onDevice: Boolean, hazeState: HazeState, modifi
             style = MaterialTheme.typography.labelSmall,
             color = tint
         )
+    }
     }
 }
 

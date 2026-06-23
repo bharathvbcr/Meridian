@@ -47,12 +47,11 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.Motion
-import com.example.core.designsystem.liquidGlass
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 
-@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun GlassNavBar(
     hazeState: HazeState,
@@ -61,27 +60,32 @@ fun GlassNavBar(
     modifier: Modifier = Modifier,
     collapsed: Boolean = false
 ) {
+    val onNow = remember(onNavigate) { { onNavigate("now") } }
+    val onWorld = remember(onNavigate) { { onNavigate("world") } }
+    val onAi = remember(onNavigate) { { onNavigate("ai") } }
+    val onPlan = remember(onNavigate) { { onNavigate("plan") } }
+    val onSettings = remember(onNavigate) { { onNavigate("settings") } }
+
     val horizontalPadding by animateDpAsState(
         targetValue = if (collapsed) 8.dp else 12.dp,
         animationSpec = Motion.bouncy(),
         label = "navPadding"
     )
 
-    Box(
+    LiquidGlassSurface(
+        hazeState = hazeState,
         modifier = modifier
             .navigationBarsPadding()
             .padding(bottom = 16.dp)
             .height(72.dp)
-            .wrapContentWidth()
-            .liquidGlass(
-                hazeState = hazeState,
-                shape = CircleShape,
-                tintColor = Color.Black.copy(alpha = 0.1f),
-            ),
-        contentAlignment = Alignment.Center
+            .wrapContentWidth(),
+        shape = CircleShape,
+        tintColor = GlassDefaults.cardTint,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = horizontalPadding),
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -90,33 +94,33 @@ fun GlassNavBar(
                 label = "Now",
                 selected = currentRoute == "now",
                 showLabel = !collapsed,
-                onClick = { onNavigate("now") }
+                onClick = onNow
             )
             NavItem(
                 icon = Icons.Default.Public,
                 label = "World",
                 selected = currentRoute == "world",
                 showLabel = !collapsed,
-                onClick = { onNavigate("world") }
+                onClick = onWorld
             )
             // AI launcher button (center slot)
             AiNavButton(
                 selected = currentRoute == "ai",
-                onClick = { onNavigate("ai") }
+                onClick = onAi
             )
             NavItem(
                 icon = Icons.AutoMirrored.Filled.EventNote,
                 label = "Plan",
                 selected = currentRoute == "plan",
                 showLabel = !collapsed,
-                onClick = { onNavigate("plan") }
+                onClick = onPlan
             )
             NavItem(
                 icon = Icons.Default.Settings,
                 label = "Settings",
                 selected = currentRoute == "settings",
                 showLabel = !collapsed,
-                onClick = { onNavigate("settings") }
+                onClick = onSettings
             )
         }
     }

@@ -22,8 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -51,6 +51,7 @@ import android.app.Application
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import com.example.feature.now.NowScreen
+import com.example.feature.onboarding.OnboardingOverlay
 import com.example.feature.worldclock.WorldClockScreen
 import com.example.feature.planner.PlanScreen
 import com.example.core.designsystem.CelestialBackdrop
@@ -71,6 +72,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // enableEdgeToEdge() turns on isNavigationBarContrastEnforced, which makes the system paint
+        // a translucent scrim behind the 3-button nav bar. That grey band fights the floating
+        // GlassNavBar and the edge-to-edge glass sheets, so disable it (API 29+) to keep the bottom
+        // edge consistently transparent.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.isNavigationBarContrastEnforced = false
+        }
         // Keep the Live Update countdown fresh; WorkManager is initialized by app startup here.
         com.example.core.notify.LiveUpdates.schedulePeriodic(this)
         setContent {
@@ -103,18 +111,24 @@ fun MainAppHost() {
 
     // Window size class (approx): medium/expanded gets a side rail, compact gets the bottom bar (§6).
     val wideLayout = LocalConfiguration.current.screenWidthDp >= 600
-    val onNavigate: (String) -> Unit = { route ->
-        navController.navigate(route) {
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+    val onNavigate: (String) -> Unit = remember(navController) {
+        { route ->
+            navController.navigate(route) {
+                // Keep the bottom-nav back stack flat (one tab deep). We deliberately omit
+                // saveState/restoreState: paired with the meridian:// deep links, restoreState
+                // could resurrect a deep-linked tab's saved back stack when a *different* tab was
+                // tapped — e.g. opening via a "meridian://plan" reminder then tapping Now left you
+                // stuck on Plan instead of going Home.
+                popUpTo(navController.graph.findStartDestination().id)
+                launchSingleTop = true
+            }
         }
     }
-    
+
     val hazeState = remember { HazeState() }
-    val settings by viewModel.settings.collectAsState()
-    val plannedTasks by viewModel.plannedTasks.collectAsState()
-    val scrubInstant by viewModel.scrubInstant.collectAsState()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val plannedTasks by viewModel.plannedTasks.collectAsStateWithLifecycle()
+    val scrubInstant by viewModel.scrubInstant.collectAsStateWithLifecycle()
     val accessoryEnabled = currentRoute !in setOf("world", "plan", "ai") && scrubInstant == null
 
     // Ask for notification permission once on first launch (Android 13+) so reminders can post.
@@ -239,6 +253,13 @@ fun MainAppHost() {
                 onNavigate = onNavigate,
                 collapsed = barCollapsed,
                 modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+
+        if (!settings.onboardingComplete) {
+            OnboardingOverlay(
+                hazeState = hazeState,
+                onFinish = { viewModel.setOnboardingComplete(true) },
             )
         }
     }

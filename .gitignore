@@ -39,3 +39,7 @@ meridian-app-plan.md
 # Stray extraction artifacts at repo root
 /META-INF/
 /com/
+.gitnexus
+
+# Local Claude Code config / runtime state
+.claude/

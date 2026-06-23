@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -25,10 +23,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +44,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import com.example.core.designsystem.ScrollableChipRow
+import com.example.core.designsystem.PlannerCard
+import com.example.core.designsystem.meridianFilterChipColors
 import com.example.core.time.TimeFormats
 import com.example.core.designsystem.GlassDatePickerSheet
 import dev.chrisbanes.haze.HazeState
@@ -62,7 +60,7 @@ private const val DURATION_STEP = 15
 private const val DURATION_MIN = 15
 private const val DURATION_MAX = 480
 
-private val DAY_MS = 24L * 60 * 60 * 1000
+private val DAY_MS = 24L * 60L * 60L * 1000L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,16 +79,11 @@ internal fun WindowCard(
     // Custom mode is on whenever the active duration isn't one of the presets. Kept as explicit
     // state so tapping "Custom" while sitting on a preset value opens the stepper too.
     var customMode by remember { mutableStateOf(durationMinutes !in DURATION_OPTIONS) }
-    var prevDurationMinutes by remember { mutableStateOf(durationMinutes) }
     val haptics = LocalHapticFeedback.current
 
-    // Leave custom mode when the stepper lands on a preset, but not when the user opens
-    // custom while already sitting on a preset value.
+    // Exit custom mode when a parent-driven change lands on a preset value.
     LaunchedEffect(durationMinutes) {
-        if (customMode && durationMinutes != prevDurationMinutes && durationMinutes in DURATION_OPTIONS) {
-            customMode = false
-        }
-        prevDurationMinutes = durationMinutes
+        if (customMode && durationMinutes in DURATION_OPTIONS) customMode = false
     }
 
     val selectedChipIndex = remember(durationMinutes, customMode) {
@@ -98,16 +91,13 @@ internal fun WindowCard(
         else DURATION_OPTIONS.indexOf(durationMinutes).coerceAtLeast(0)
     }
     val dateLabel = remember(selectedDateMillis) { formatPickedDate(selectedDateMillis) }
-    val todayMillis = remember {
-        ZonedDateTime.now(ZoneId.systemDefault()).toLocalDate()
-            .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-    }
+    val todayMillis = ZonedDateTime.now(ZoneId.systemDefault()).toLocalDate()
+        .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
     val isToday = selectedDateMillis == todayMillis
 
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            CardTitle(Icons.Default.CalendarMonth, "Window")
-            Spacer(Modifier.height(12.dp))
+    PlannerCard(modifier = modifier) {
+        CardTitle(Icons.Default.CalendarMonth, "Window")
+        Spacer(Modifier.height(12.dp))
 
             // Date picker with prev/next day navigation arrows
             Row(
@@ -175,10 +165,7 @@ internal fun WindowCard(
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
             Spacer(Modifier.height(8.dp))
-            val chipColors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-            )
+            val chipColors = meridianFilterChipColors()
             ScrollableChipRow(selectedIndex = selectedChipIndex) {
                 itemsIndexed(DURATION_OPTIONS) { _, minutes ->
                     val label = when {
@@ -260,7 +247,6 @@ internal fun WindowCard(
                 )
             }
         }
-    }
 
     if (showDatePicker) {
         GlassDatePickerSheet(

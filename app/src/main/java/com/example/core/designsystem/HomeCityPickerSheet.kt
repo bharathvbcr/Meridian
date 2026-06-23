@@ -41,9 +41,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.core.data.SavedZone
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
@@ -65,8 +67,12 @@ fun HomeCityPickerSheet(
 
     LaunchedEffect(Unit) {
         delay(180)
-        focusRequester.requestFocus()
-        keyboardController?.show()
+        try {
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        } catch (_: Exception) {
+            // Node not yet attached to the layout tree; keyboard will open on first tap.
+        }
     }
 
     var query by remember { mutableStateOf("") }
@@ -91,7 +97,7 @@ fun HomeCityPickerSheet(
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = onSurface,
                 modifier = Modifier.padding(bottom = 4.dp)
@@ -99,7 +105,7 @@ fun HomeCityPickerSheet(
             Text(
                 text = subtitle,
                 color = onSurface.copy(alpha = 0.6f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
@@ -125,7 +131,7 @@ fun HomeCityPickerSheet(
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         IconButton(onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             query = ""
                         }) {
                             Icon(
@@ -161,7 +167,7 @@ fun HomeCityPickerSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else {
+            } else if (results.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -172,6 +178,7 @@ fun HomeCityPickerSheet(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
+                                .semantics { role = Role.Button }
                                 .clickable {
                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                     keyboardController?.hide()
@@ -200,7 +207,7 @@ fun HomeCityPickerSheet(
                                 )
                             }
                         }
-                        if (index < results.size - 1) {
+                        if (index < results.lastIndex) {
                             HorizontalDivider(
                                 color = onSurface.copy(alpha = 0.08f),
                                 modifier = Modifier.padding(horizontal = 8.dp)

@@ -2,7 +2,9 @@ package com.example.feature.calendar
 
 import android.content.Context
 import android.provider.CalendarContract
+import androidx.compose.runtime.Immutable
 
+@Immutable
 data class CalendarEvent(
     val id: Long,
     val title: String,

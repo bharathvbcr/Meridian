@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -65,7 +66,7 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,12 +96,16 @@ import com.example.core.data.offsetDiffLabel
 import com.example.core.data.residenceZone
 import com.example.core.data.wallClockKey
 import com.example.core.data.PlannedTask
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassFormBottomSheet
 import com.example.core.designsystem.HomeCityPickerSheet
+import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.MeridianWordmark
 import com.example.core.designsystem.Motion
+import com.example.core.designsystem.SectionHeader
 import com.example.core.designsystem.rememberIs24Hour
+import com.example.core.designsystem.transparentCardColors
 import com.example.core.time.SolarMath
 import com.example.core.time.TimeFormats
 import com.example.core.time.ZoneCoordinates
@@ -143,10 +148,10 @@ fun NowScreen(
     hazeState: HazeState = remember { HazeState() }
 ) {
     var currentTime by remember { mutableStateOf(ZonedDateTime.now()) }
-    val savedZones by viewModel.savedZones.collectAsState()
-    val people by viewModel.people.collectAsState()
-    val settings by viewModel.settings.collectAsState()
-    val plannedTasks by viewModel.plannedTasks.collectAsState()
+    val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
+    val people by viewModel.people.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val plannedTasks by viewModel.plannedTasks.collectAsStateWithLifecycle()
     val is24Hour = rememberIs24Hour(settings)
 
     val lazyListState = rememberLazyListState()
@@ -166,7 +171,7 @@ fun NowScreen(
     }
 
     LaunchedEffect(savedZones) {
-        if (!isDragging) {
+        if (draggingKey == null) {
             localWatchlistZones = savedZones.filter { !it.isNowAnchor() }
         }
     }
@@ -198,11 +203,11 @@ fun NowScreen(
             .take(3)
     }
 
-    val zoneAbbreviation = remember(localZoneId) {
-        ZonedDateTime.now(localZoneId).format(DateTimeFormatter.ofPattern("z"))
+    val zoneAbbreviation = remember(localZoneId, currentTime) {
+        currentTime.withZoneSameInstant(localZoneId).format(DateTimeFormatter.ofPattern("z"))
     }
-    val offsetText = remember(localZoneId) {
-        val offset = ZonedDateTime.now(localZoneId).offset.toString()
+    val offsetText = remember(localZoneId, currentTime) {
+        val offset = currentTime.withZoneSameInstant(localZoneId).offset.toString()
         if (offset == "Z") "±00:00" else offset
     }
 
@@ -210,6 +215,7 @@ fun NowScreen(
         state = lazyListState,
         modifier = modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .padding(horizontal = 16.dp)
             .pointerInput(lazyListState) {
                 // Distinguishes a reorder from a "hold still" gesture: any real drag flips this true,
@@ -284,7 +290,6 @@ fun NowScreen(
     ) {
         // Welcome and Local Header
         item {
-            Spacer(Modifier.height(56.dp))
             MeridianWordmark(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -339,42 +344,22 @@ fun NowScreen(
 
         // Agenda Section Header
         item {
-            Row(
+            SectionHeader(
+                title = "Upcoming Agenda",
+                icon = Icons.Filled.Schedule,
+                style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.Start,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Schedule,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Upcoming Agenda",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.padding(end = 12.dp)
-                )
-                androidx.compose.material3.HorizontalDivider(
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+                    .padding(vertical = 8.dp)
+            )
         }
 
         // Agenda List
         if (upcomingTasks.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .liquidGlass(hazeState),
-                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                LiquidGlassSurface(
+                    hazeState = hazeState,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
@@ -425,30 +410,13 @@ fun NowScreen(
         // Saved Zones Header
         item {
             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.Home,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Zone Watchlist",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                    androidx.compose.material3.HorizontalDivider(
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                SectionHeader(
+                    title = "Zone Watchlist",
+                    icon = Icons.Outlined.Home,
+                    style = MaterialTheme.typography.titleLarge,
+                    iconTint = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 if (hasFavorites) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -477,11 +445,9 @@ fun NowScreen(
         // Pinned World Clocks
         if (localWatchlistZones.isEmpty()) {
             item {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .liquidGlass(hazeState),
-                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                LiquidGlassSurface(
+                    hazeState = hazeState,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(20.dp),
@@ -661,30 +627,35 @@ private fun TimeAndLocationCard(
         val coord = ZoneCoordinates.coordinateFor(zoneId, currentTime.toInstant())
         SolarMath.isDaylight(coord.latitude, coord.longitude, currentTime.toInstant())
     }
+    val daylightGlow = GlassDefaults.daylightGlow
+    val nightGlow = GlassDefaults.nightGlow
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .liquidGlass(hazeState, tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f))
-            .drawBehind {
-                val glowColor = if (isDaylight) {
-                    Color(0xFFFFB703).copy(alpha = 0.22f)
-                } else {
-                    Color(0xFF219EBC).copy(alpha = 0.22f)
-                }
-                drawCircle(
-                    brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                        colors = listOf(glowColor, Color.Transparent),
+    LiquidGlassSurface(
+        hazeState = hazeState,
+        modifier = Modifier.fillMaxWidth(),
+        tintColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .drawBehind {
+                    val glowColor = if (isDaylight) {
+                        daylightGlow.copy(alpha = 0.22f)
+                    } else {
+                        nightGlow.copy(alpha = 0.22f)
+                    }
+                    drawCircle(
+                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                            colors = listOf(glowColor, Color.Transparent),
+                            center = Offset(size.width * 0.85f, size.height * 0.15f),
+                            radius = size.width * 0.6f
+                        ),
                         center = Offset(size.width * 0.85f, size.height * 0.15f),
                         radius = size.width * 0.6f
-                    ),
-                    center = Offset(size.width * 0.85f, size.height * 0.15f),
-                    radius = size.width * 0.6f
-                )
-            },
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+                    )
+                }
+                .padding(20.dp)
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1048,6 +1019,8 @@ private fun SolarDaylightWidget(
     val isDaylight = remember(geoPoint, currentTime.toEpochSecond() / 60) {
         SolarMath.isDaylight(geoPoint.latitude, geoPoint.longitude, currentTime.toInstant())
     }
+    val daylightGlow = GlassDefaults.daylightGlow
+    val nightGlow = GlassDefaults.nightGlow
 
     val daylightSummaryText = remember(sunTimes) {
         if (sunTimes.sunrise != null && sunTimes.sunset != null) {
@@ -1061,6 +1034,7 @@ private fun SolarDaylightWidget(
             "Polar Night (24 hrs darkness)"
         }
     }
+    val sunTimeFormatter = remember(is24Hour) { TimeFormats.hourMinute(is24Hour) }
 
     Card(
         modifier = Modifier
@@ -1068,9 +1042,9 @@ private fun SolarDaylightWidget(
             .liquidGlass(hazeState, tintColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.05f))
             .drawBehind {
                 val glowColor = if (isDaylight) {
-                    Color(0xFFFFB703).copy(alpha = 0.22f) // warm sun orange/yellow glow
+                    daylightGlow.copy(alpha = 0.22f) // warm sun orange/yellow glow
                 } else {
-                    Color(0xFF219EBC).copy(alpha = 0.22f) // cool moon cyan/blue glow
+                    nightGlow.copy(alpha = 0.22f) // cool moon cyan/blue glow
                 }
                 drawCircle(
                     brush = androidx.compose.ui.graphics.Brush.radialGradient(
@@ -1082,14 +1056,14 @@ private fun SolarDaylightWidget(
                     radius = size.width * 0.6f
                 )
             },
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        colors = transparentCardColors()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = if (isDaylight) Icons.Filled.WbSunny else Icons.Filled.NightsStay,
                     contentDescription = null,
-                    tint = if (isDaylight) Color(0xFFFFD166) else Color(0xFF90D2FF),
+                    tint = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
                     modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(12.dp))
@@ -1106,10 +1080,9 @@ private fun SolarDaylightWidget(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (sunTimes.sunrise != null && sunTimes.sunset != null) {
-                        val tf = TimeFormats.hourMinute(is24Hour)
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = "↑ ${sunTimes.sunrise.format(tf)}  ↓ ${sunTimes.sunset.format(tf)}",
+                            text = "↑ ${sunTimes.sunrise.format(sunTimeFormatter)}  ↓ ${sunTimes.sunset.format(sunTimeFormatter)}",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary
@@ -1151,12 +1124,12 @@ private fun SunTrackCanvas(
     modifier: Modifier = Modifier
 ) {
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
-    val daylightColor = Color(0xFFFFD166).copy(alpha = 0.8f)
-    val nightColor = Color(0xFF90D2FF).copy(alpha = 0.8f)
+    val daylightColor = GlassDefaults.daylightAccent.copy(alpha = 0.8f)
+    val nightColor = GlassDefaults.nightAccent.copy(alpha = 0.8f)
     val dotColor = if (sunrise != null && sunset != null && currentTime.isAfter(sunrise) && currentTime.isBefore(sunset)) {
-        Color(0xFFFFD166)
+        GlassDefaults.daylightAccent
     } else {
-        Color(0xFF90D2FF)
+        GlassDefaults.nightAccent
     }
 
     Canvas(
@@ -1201,7 +1174,7 @@ private fun SunTrackCanvas(
                 if (currentMin in riseMin..setMin) {
                     // Daylight progress
                     val range = setMin - riseMin
-                    pct = if (range > 0) (currentMin - riseMin).toFloat() / range else 0f
+                    pct = (if (range > 0) (currentMin - riseMin).toFloat() / range else 0f).coerceIn(0f, 1f)
                     // Draw active daylight segment
                     drawLine(
                         color = daylightColor,
@@ -1218,7 +1191,7 @@ private fun SunTrackCanvas(
                         currentMin - setMin
                     }
                     val totalNight = 1440 - (setMin - riseMin)
-                    pct = if (totalNight > 0) range.toFloat() / totalNight else 0f
+                    pct = (if (totalNight > 0) range.toFloat() / totalNight else 0f).coerceIn(0f, 1f)
                     // Draw active night segment
                     drawLine(
                         color = nightColor,
@@ -1307,7 +1280,7 @@ private fun AgendaItemRow(
             // Repeated agenda list row → lightweight glass (no per-row backdrop blur) so the cost
             // doesn't scale with the number of upcoming tasks.
             .liquidGlass(hazeState, blur = false),
-        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        colors = transparentCardColors()
     ) {
         Row(
             modifier = Modifier
@@ -1397,7 +1370,7 @@ private fun WatchlistZoneCard(
         if (o == "Z") "UTC±0" else "UTC$o"
     }
 
-    val isWorkingHours = zoneTime.hour in workStartHour..workEndHour
+    val isWorkingHours = zoneTime.hour in workStartHour until workEndHour
 
     val geoPoint = remember(zone.id) {
         ZoneCoordinates.coordinateFor(zone.id, Instant.now())
@@ -1405,7 +1378,10 @@ private fun WatchlistZoneCard(
     val isDaylight = remember(geoPoint, currentTime.toEpochSecond() / 60) {
         SolarMath.isDaylight(geoPoint.latitude, geoPoint.longitude, currentTime.toInstant())
     }
+    val daylightGlow = GlassDefaults.daylightGlow
+    val nightGlow = GlassDefaults.nightGlow
 
+    val favoriteContacts = remember(contacts) { contacts.filter { it.isFavorite } }
     var expanded by remember { mutableStateOf(false) }
     var showAddContactDialog by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
@@ -1443,9 +1419,9 @@ private fun WatchlistZoneCard(
                 )
                 .drawBehind {
                     val glowColor = if (isDaylight) {
-                        Color(0xFFFFB703).copy(alpha = 0.22f)
+                        daylightGlow.copy(alpha = 0.22f)
                     } else {
-                        Color(0xFF219EBC).copy(alpha = 0.22f)
+                        nightGlow.copy(alpha = 0.22f)
                     }
                     drawCircle(
                         brush = androidx.compose.ui.graphics.Brush.radialGradient(
@@ -1457,7 +1433,7 @@ private fun WatchlistZoneCard(
                         radius = size.width * 0.6f
                     )
                 },
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+            colors = transparentCardColors()
         ) {
             Row(
                 modifier = Modifier
@@ -1473,7 +1449,7 @@ private fun WatchlistZoneCard(
                     Icon(
                         imageVector = if (isDaylight) Icons.Filled.WbSunny else Icons.Filled.NightsStay,
                         contentDescription = null,
-                        tint = if (isDaylight) Color(0xFFFFD166) else Color(0xFF90D2FF),
+                        tint = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
                         modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(14.dp))
@@ -1490,7 +1466,7 @@ private fun WatchlistZoneCard(
                                 Icon(
                                     imageVector = Icons.Filled.Star,
                                     contentDescription = "Favorite",
-                                    tint = Color(0xFFFFD166),
+                                    tint = GlassDefaults.daylightAccent,
                                     modifier = Modifier.size(14.dp)
                                 )
                             }
@@ -1508,7 +1484,6 @@ private fun WatchlistZoneCard(
                             fontSize = 10.sp
                         )
                         // Favorite contact pills — shown even when card is collapsed
-                        val favoriteContacts = contacts.filter { it.isFavorite }
                         if (favoriteContacts.isNotEmpty()) {
                             Spacer(Modifier.height(4.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1526,7 +1501,7 @@ private fun WatchlistZoneCard(
                                             Icon(
                                                 imageVector = Icons.Filled.Star,
                                                 contentDescription = null,
-                                                tint = Color(0xFFFFD166),
+                                                tint = GlassDefaults.daylightAccent,
                                                 modifier = Modifier.size(10.dp)
                                             )
                                             Text(
@@ -1609,7 +1584,7 @@ private fun WatchlistZoneCard(
                                     text = sunTimes.sunrise.format(sunFormatter),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFD166)
+                                    color = GlassDefaults.daylightAccent
                                 )
                             }
                         }
@@ -1624,7 +1599,7 @@ private fun WatchlistZoneCard(
                                     text = sunTimes.sunset.format(sunFormatter),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF90D2FF)
+                                    color = GlassDefaults.nightAccent
                                 )
                             }
                         }
@@ -1678,7 +1653,6 @@ private fun WatchlistZoneCard(
                             Text("Add", style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                    val favoriteContacts = contacts.filter { it.isFavorite }
                     if (favoriteContacts.isEmpty()) {
                         Text(
                             text = "No starred contacts — tap Add or star someone to include them in Plan",
@@ -1707,7 +1681,7 @@ private fun WatchlistZoneCard(
                                     Icon(
                                         imageVector = if (person.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                                         contentDescription = if (person.isFavorite) "Unfavorite" else "Favorite",
-                                        tint = if (person.isFavorite) Color(0xFFFFD166) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                                        tint = if (person.isFavorite) GlassDefaults.daylightAccent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
                                         modifier = Modifier.size(16.dp)
                                     )
                                 }
@@ -1747,7 +1721,7 @@ private fun WatchlistZoneCard(
         DropdownMenu(
             expanded = menuExpanded,
             onDismissRequest = onDismissMenu,
-            shape = RoundedCornerShape(22.dp),
+            shape = GlassDefaults.menuShape,
             containerColor = Color.Transparent,
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
@@ -1757,7 +1731,7 @@ private fun WatchlistZoneCard(
             // and keeps the menu text legible over whatever sits behind the popup.
             modifier = Modifier.liquidGlass(
                 hazeState = hazeState,
-                shape = RoundedCornerShape(22.dp),
+                shape = GlassDefaults.menuShape,
                 tintColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
                 borderColor = Color.White.copy(alpha = 0.25f),
                 blur = false
@@ -1774,7 +1748,7 @@ private fun WatchlistZoneCard(
                     Icon(
                         imageVector = if (zone.isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
                         contentDescription = null,
-                        tint = Color(0xFFFFD166)
+                        tint = GlassDefaults.daylightAccent
                     )
                 }
             )

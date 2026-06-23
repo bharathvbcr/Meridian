@@ -231,6 +231,10 @@ class MainViewModel(
         viewModelScope.launch { settingsRepository.setHomeCountryEnabled(enabled) }
     }
 
+    fun setOnboardingComplete(complete: Boolean) {
+        viewModelScope.launch { settingsRepository.setOnboardingComplete(complete) }
+    }
+
     /**
      * Resolves [query] to addable zones across every supported dimension — zone, UTC offset, city,
      * and airport — merged by priority and deduped by zone id (so the same zone never appears twice):

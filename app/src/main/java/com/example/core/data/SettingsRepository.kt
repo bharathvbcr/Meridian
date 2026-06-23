@@ -76,6 +76,8 @@ data class MeridianSettings(
     val mapStyle: MapStyle = MapStyle.VECTOR,
     /** When true and a home-country city is set, the Now card shows that third clock. */
     val homeCountryEnabled: Boolean = false,
+    /** Set to true after the user completes or skips the first-launch onboarding walkthrough. */
+    val onboardingComplete: Boolean = false,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "meridian_settings")
@@ -100,6 +102,7 @@ class SettingsRepository(private val context: Context) {
         val DEFAULT_WORK_END_HOUR = intPreferencesKey("default_work_end_hour")
         val MAP_STYLE = stringPreferencesKey("map_style")
         val HOME_COUNTRY_ENABLED = booleanPreferencesKey("home_country_enabled")
+        val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
     }
 
     val settings: Flow<MeridianSettings> = context.settingsDataStore.data.map { prefs ->
@@ -116,6 +119,7 @@ class SettingsRepository(private val context: Context) {
             defaultWorkEndHour = prefs[Keys.DEFAULT_WORK_END_HOUR] ?: 17,
             mapStyle = prefs[Keys.MAP_STYLE]?.let(::parseMapStyle) ?: MapStyle.VECTOR,
             homeCountryEnabled = prefs[Keys.HOME_COUNTRY_ENABLED] ?: false,
+            onboardingComplete = prefs[Keys.ONBOARDING_COMPLETE] ?: false,
         )
     }
 
@@ -167,6 +171,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHomeCountryEnabled(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.HOME_COUNTRY_ENABLED] = enabled }
+    }
+
+    suspend fun setOnboardingComplete(complete: Boolean) {
+        context.settingsDataStore.edit { it[Keys.ONBOARDING_COMPLETE] = complete }
     }
 
     private fun parseHourCycle(raw: String): HourCycle =

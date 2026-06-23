@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.core.designsystem.CardHeader
+import com.example.core.designsystem.PlannerCard
 import com.example.core.time.TimeFormats
 import com.example.feature.calendar.CalendarEvent
 import java.time.Instant
@@ -38,69 +38,67 @@ internal fun CalendarEventsCard(
     onRequestPermission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(shape = RoundedCornerShape(28.dp), colors = plannerCardColors(), modifier = modifier) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            CardTitle(Icons.Default.CalendarMonth, "Your Calendar")
-            Spacer(Modifier.height(12.dp))
+    PlannerCard(modifier = modifier) {
+        CardHeader(icon = Icons.Default.CalendarMonth, title = "Your Calendar")
+        Spacer(Modifier.height(12.dp))
 
-            when {
-                !hasPermission -> {
+        when {
+            !hasPermission -> {
+                Text(
+                    text = "Allow calendar access to see your upcoming events alongside meeting slots.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onRequestPermission,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Grant calendar access")
+                }
+            }
+            events.isEmpty() -> {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+                    )
                     Text(
-                        text = "Allow calendar access to see your upcoming events alongside meeting slots.",
+                        text = "No events scheduled for the next 7 days.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedButton(
-                        onClick = onRequestPermission,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarMonth,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text("Grant calendar access")
-                    }
                 }
-                events.isEmpty() -> {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarMonth,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
-                        )
-                        Text(
-                            text = "No events scheduled for the next 7 days.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            }
+            else -> {
+                val display = remember(events) { events.take(5) }
+                display.forEachIndexed { i, event ->
+                    CalendarEventRow(event = event, is24Hour = is24Hour)
+                    if (i < display.lastIndex) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                         )
                     }
                 }
-                else -> {
-                    val display = events.take(5)
-                    display.forEachIndexed { i, event ->
-                        CalendarEventRow(event = event, is24Hour = is24Hour)
-                        if (i < display.lastIndex) {
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 4.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
-                            )
-                        }
-                    }
-                    if (events.size > 5) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "+${events.size - 5} more events this week",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        )
-                    }
+                if (events.size > 5) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "+${events.size - 5} more events this week",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
                 }
             }
         }
@@ -112,7 +110,7 @@ private fun CalendarEventRow(event: CalendarEvent, is24Hour: Boolean) {
     val zone = remember(event.timeZone) {
         runCatching { ZoneId.of(event.timeZone) }.getOrElse { ZoneId.systemDefault() }
     }
-    val timeLabel = remember(event.startMillis, event.endMillis, is24Hour, event.isAllDay) {
+    val timeLabel = remember(event.startMillis, event.endMillis, is24Hour, event.isAllDay, event.timeZone) {
         if (event.isAllDay) "All day" else {
             val fmt = TimeFormats.hourMinute(is24Hour)
             val start = ZonedDateTime.ofInstant(Instant.ofEpochMilli(event.startMillis), zone).format(fmt)

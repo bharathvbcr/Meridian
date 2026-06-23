@@ -66,12 +66,17 @@ fun GlassBottomSheet(
                     tintColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
                     borderColor = Color.White.copy(alpha = 0.25f),
                     blur = false,
-                )
-                .navigationBarsPadding()
-                .imePadding(),
+                ),
         ) {
-            BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
-            content()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding(),
+            ) {
+                BottomSheetDefaults.DragHandle(modifier = Modifier.align(Alignment.CenterHorizontally))
+                content()
+            }
         }
     }
 }
@@ -146,7 +151,7 @@ fun GlassDatePickerSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onDismissRequest) { Text("Cancel") }
@@ -154,6 +159,7 @@ fun GlassDatePickerSheet(
                     onClick = {
                         pickerState.selectedDateMillis?.let(onConfirm)
                     },
+                    enabled = pickerState.selectedDateMillis != null,
                 ) { Text("OK") }
             }
         }
@@ -198,7 +204,7 @@ fun GlassTimePickerSheet(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 24.dp),
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onDismissRequest) { Text("Cancel") }

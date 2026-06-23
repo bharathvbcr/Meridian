@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Meridian widget extension entitlements.
+
+      Must declare the SAME App Group as the host app so the widget timeline provider
+      (Provider / WorldClockControlWidget) can read the pinned-zone snapshot
+      SharedZoneStore writes into the shared UserDefaults suite, and so the
+      EventCountdown Live Activity shares the host's container.
+    -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.example.meridian</string>
+    </array>
+</dict>
+</plist>

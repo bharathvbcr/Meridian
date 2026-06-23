@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,12 +42,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.MyLocation
@@ -73,10 +72,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -89,8 +86,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -101,13 +99,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
@@ -130,10 +130,17 @@ import com.example.core.data.residenceZone
 import com.example.core.interop.InteropClient
 import com.example.core.designsystem.GlassBottomSheet
 import com.example.core.designsystem.GlassCard
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.HomeCityPickerSheet
+import com.example.core.designsystem.HourStepperRow
+import com.example.core.designsystem.MeridianFilterChip
 import com.example.core.designsystem.MeridianWordmark
 import com.example.core.designsystem.Motion
 import com.example.core.designsystem.ScrollableChipRow
+import com.example.core.designsystem.SectionHeader
+import com.example.core.designsystem.SettingsCard
+import com.example.core.designsystem.meridianFilterChipColors
+import com.example.core.designsystem.ExpressiveShapes
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 
@@ -181,8 +188,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     hazeState: HazeState = remember { HazeState() }
 ) {
-    val settings by viewModel.settings.collectAsState()
-    val savedZones by viewModel.savedZones.collectAsState()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
     val onSurface = MaterialTheme.colorScheme.onSurface
     val haptics = LocalHapticFeedback.current
     val listState = rememberLazyListState()
@@ -190,10 +197,10 @@ fun SettingsScreen(
     var focusedSection by remember { mutableStateOf<SettingsSection?>(null) }
     var expandedSections by remember { mutableStateOf(setOf<SettingsSection>()) }
 
-    val visibleSections = if (focusedSection != null) {
-        listOf(focusedSection!!)
-    } else {
-        SettingsSection.entries
+    val visibleSections by remember(focusedSection) {
+        derivedStateOf {
+            if (focusedSection != null) listOf(focusedSection!!) else SettingsSection.entries
+        }
     }
 
     LaunchedEffect(focusedSection) {
@@ -206,7 +213,7 @@ fun SettingsScreen(
         state = listState,
         modifier = modifier
             .fillMaxSize()
-            .padding(top = 48.dp)
+            .statusBarsPadding()
     ) {
         item(key = "settings-header") {
             Column(modifier = Modifier.padding(16.dp)) {
@@ -309,7 +316,7 @@ fun SettingsScreen(
 @Composable
 private fun CompanionAppCard(hazeState: HazeState) {
     val context = LocalContext.current
-    val client = remember { InteropClient(context) }
+    val client = remember { InteropClient(context.applicationContext) }
     var installed by remember { mutableStateOf(client.isPeerInstalled()) }
     LifecycleResumeEffect(Unit) {
         installed = client.isPeerInstalled()
@@ -392,10 +399,7 @@ private fun SettingsQuickNav(
                             onSelectSection(null)
                         },
                         label = { Text("All") },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
+                        colors = meridianFilterChipColors(),
                     )
                 }
             }
@@ -407,10 +411,7 @@ private fun SettingsQuickNav(
                         onSelectSection(if (focusedSection == section) null else section)
                     },
                     label = { Text(section.pillLabel) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                    ),
+                    colors = meridianFilterChipColors(),
                 )
             }
         }
@@ -443,9 +444,11 @@ private fun CollapsibleSettingsSection(
                 hazeState = hazeState,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .clickable(onClick = onToggle),
-                shape = RoundedCornerShape(28.dp),
+                    // Clip BEFORE clickable so the ripple is bounded to the rounded corners;
+                    // GlassCard's internal clip runs after this incoming modifier, too late for the ripple.
+                    .clip(GlassDefaults.cardShape)
+                    .clickable(onClick = onToggle, role = Role.Button),
+                shape = GlassDefaults.cardShape,
             ) {
                 SettingsSectionCardHeader(
                     section = section,
@@ -455,7 +458,15 @@ private fun CollapsibleSettingsSection(
                 )
             }
         } else {
-            SectionHeader(section.headerLabel)
+            SectionHeader(
+                title = section.headerLabel,
+                style = MaterialTheme.typography.labelLarge,
+                titleColor = MaterialTheme.colorScheme.primary,
+                dividerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            )
         }
 
         AnimatedVisibility(
@@ -524,28 +535,6 @@ private fun SettingsSectionCardHeader(
 }
 
 @Composable
-private fun SectionHeader(label: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(end = 12.dp)
-        )
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-            modifier = Modifier.weight(1f)
-        )
-    }
-}
-
-@Composable
 private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
     val context = LocalContext.current
     val onSurface = MaterialTheme.colorScheme.onSurface
@@ -591,14 +580,6 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
         ActivityResultContracts.StartActivityForResult()
     ) { refreshKey++ }
 
-    fun openAppSettings() {
-        context.startActivity(
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = Uri.fromParts("package", context.packageName, null)
-            }
-        )
-    }
-
     fun requestExactAlarms() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             exactAlarmsLauncher.launch(
@@ -609,30 +590,23 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
         }
     }
 
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Security,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("App permissions", color = onSurface, fontWeight = FontWeight.Medium)
-            }
-            Text(
-                text = "Meridian only asks for access when a feature needs it. Grant permissions here or in system settings.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+    SettingsCard(hazeState = hazeState) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Security,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
             )
+            Spacer(Modifier.width(8.dp))
+            Text("App permissions", color = onSurface, fontWeight = FontWeight.Medium)
+        }
+        Text(
+            text = "Meridian only asks for access when a feature needs it. Grant permissions here or in system settings.",
+            color = onSurface.copy(alpha = 0.5f),
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+        )
 
             PermissionRow(
                 icon = Icons.Default.MyLocation,
@@ -640,7 +614,7 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
                 description = "Resolve your home time zone from your current position.",
                 granted = locationGranted,
                 onGrant = { locationLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) },
-                onOpenSettings = ::openAppSettings,
+                onOpenSettings = { openAppSettings(context) },
             )
             PermissionDivider()
             PermissionRow(
@@ -650,7 +624,7 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
                 granted = notificationsGranted,
                 applicable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU,
                 onGrant = { notificationsLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
-                onOpenSettings = ::openAppSettings,
+                onOpenSettings = { openAppSettings(context) },
             )
             PermissionDivider()
             PermissionRow(
@@ -659,7 +633,7 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
                 description = "Show your device calendar on the planner.",
                 granted = calendarGranted,
                 onGrant = { calendarLauncher.launch(Manifest.permission.READ_CALENDAR) },
-                onOpenSettings = ::openAppSettings,
+                onOpenSettings = { openAppSettings(context) },
             )
             PermissionDivider()
             PermissionRow(
@@ -668,7 +642,7 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
                 description = "Import people into the planner from your address book.",
                 granted = contactsGranted,
                 onGrant = { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) },
-                onOpenSettings = ::openAppSettings,
+                onOpenSettings = { openAppSettings(context) },
             )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 PermissionDivider()
@@ -681,7 +655,6 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
                     onOpenSettings = ::requestExactAlarms,
                 )
             }
-        }
     }
 }
 
@@ -711,7 +684,7 @@ private fun PermissionRow(
     }
     val statusColor = when {
         !applicable -> onSurface.copy(alpha = 0.45f)
-        granted -> Color(0xFF4CAF50)
+        granted -> GlassDefaults.positive
         else -> MaterialTheme.colorScheme.error.copy(alpha = 0.85f)
     }
 
@@ -747,10 +720,10 @@ private fun PermissionRow(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = onGrant,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = ExpressiveShapes.small,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text("Allow")
+                    Text("Allow $title access")
                 }
                 TextButton(onClick = onOpenSettings) {
                     Text("System settings")
@@ -763,15 +736,8 @@ private fun PermissionRow(
 @Composable
 private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel, hazeState: HazeState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Clock format", color = onSurface, fontWeight = FontWeight.Medium)
+    SettingsCard(hazeState = hazeState) {
+        Text("Clock format", color = onSurface, fontWeight = FontWeight.Medium)
             Text(
                 "Choose how every clock renders the hour.",
                 color = onSurface.copy(alpha = 0.5f),
@@ -779,15 +745,21 @@ private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel,
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                HourCycleChip("System", settings.hourCycle == HourCycle.SYSTEM) {
-                    viewModel.setHourCycle(HourCycle.SYSTEM)
-                }
-                HourCycleChip("12-hour", settings.hourCycle == HourCycle.H12) {
-                    viewModel.setHourCycle(HourCycle.H12)
-                }
-                HourCycleChip("24-hour", settings.hourCycle == HourCycle.H24) {
-                    viewModel.setHourCycle(HourCycle.H24)
-                }
+                MeridianFilterChip(
+                    label = "System",
+                    selected = settings.hourCycle == HourCycle.SYSTEM,
+                    onClick = { viewModel.setHourCycle(HourCycle.SYSTEM) },
+                )
+                MeridianFilterChip(
+                    label = "12-hour",
+                    selected = settings.hourCycle == HourCycle.H12,
+                    onClick = { viewModel.setHourCycle(HourCycle.H12) },
+                )
+                MeridianFilterChip(
+                    label = "24-hour",
+                    selected = settings.hourCycle == HourCycle.H24,
+                    onClick = { viewModel.setHourCycle(HourCycle.H24) },
+                )
             }
 
             Spacer(Modifier.height(20.dp))
@@ -846,40 +818,26 @@ private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
             )
-            val mapStyleOptions = listOf(
-                "Realistic" to MapStyle.REALISTIC,
-                "Balanced" to MapStyle.BALANCED,
-                "Performance" to MapStyle.PERFORMANCE,
-                "Vector" to MapStyle.VECTOR,
-            )
+            val mapStyleOptions = remember {
+                listOf(
+                    "Realistic" to MapStyle.REALISTIC,
+                    "Balanced" to MapStyle.BALANCED,
+                    "Performance" to MapStyle.PERFORMANCE,
+                    "Vector" to MapStyle.VECTOR,
+                )
+            }
             ScrollableChipRow(
                 selectedIndex = mapStyleOptions.indexOfFirst { it.second == settings.mapStyle },
             ) {
                 items(mapStyleOptions) { (label, style) ->
-                    MapStyleChip(label, settings.mapStyle == style) {
-                        viewModel.setMapStyle(style)
-                    }
+                    MeridianFilterChip(
+                        label = label,
+                        selected = settings.mapStyle == style,
+                        onClick = { viewModel.setMapStyle(style) },
+                    )
                 }
             }
-        }
     }
-}
-
-@Composable
-private fun MapStyleChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    FilterChip(
-        selected = selected,
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
-        label = { Text(label) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    )
 }
 
 @Composable
@@ -918,6 +876,11 @@ private fun GlassOpacitySlider(
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         )
+        val opacitySliderColors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = MaterialTheme.colorScheme.primary,
+            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
         Slider(
             value = opacity.toFloat(),
             onValueChange = { value ->
@@ -930,11 +893,7 @@ private fun GlassOpacitySlider(
             },
             valueRange = MIN_GLASS_OPACITY.toFloat()..MAX_GLASS_OPACITY.toFloat(),
             steps = MAX_GLASS_OPACITY - MIN_GLASS_OPACITY - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            colors = opacitySliderColors,
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -988,6 +947,11 @@ private fun BackdropIntensitySlider(
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         )
+        val intensitySliderColors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = MaterialTheme.colorScheme.primary,
+            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
         Slider(
             value = intensity.toFloat(),
             onValueChange = { value ->
@@ -1000,30 +964,9 @@ private fun BackdropIntensitySlider(
             },
             valueRange = MIN_BACKDROP_INTENSITY.toFloat()..MAX_BACKDROP_INTENSITY.toFloat(),
             steps = MAX_BACKDROP_INTENSITY - MIN_BACKDROP_INTENSITY - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            colors = intensitySliderColors,
         )
     }
-}
-
-@Composable
-private fun HourCycleChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    val haptics = LocalHapticFeedback.current
-    FilterChip(
-        selected = selected,
-        onClick = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onClick()
-        },
-        label = { Text(label) },
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-        )
-    )
 }
 
 @Composable
@@ -1043,16 +986,17 @@ private fun SettingSwitchRow(
             Text(title, color = onSurface, fontWeight = FontWeight.Medium)
             Text(subtitle, color = onSurface.copy(alpha = 0.5f), fontSize = 12.sp)
         }
+        val switchColors = SwitchDefaults.colors(
+            checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+            checkedTrackColor = MaterialTheme.colorScheme.primary,
+        )
         Switch(
             checked = checked,
             onCheckedChange = {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onCheckedChange(it)
             },
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
-                checkedTrackColor = MaterialTheme.colorScheme.primary
-            )
+            colors = switchColors,
         )
     }
 }
@@ -1078,14 +1022,7 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
         if (granted) resolve() else status = "Location permission denied. You can still choose a home city manually."
     }
 
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Home,
@@ -1113,7 +1050,7 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
                     if (viewModel.hasLocationPermission()) resolve()
                     else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                 },
-                shape = RoundedCornerShape(12.dp),
+                shape = ExpressiveShapes.small,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.MyLocation, contentDescription = null)
@@ -1123,7 +1060,7 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
             Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = { showCityPicker = true },
-                shape = RoundedCornerShape(12.dp),
+                shape = ExpressiveShapes.small,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(Icons.Default.Search, contentDescription = null)
@@ -1142,7 +1079,6 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
                     }
                 }
             }
-        }
     }
 
     if (showCityPicker) {
@@ -1172,14 +1108,7 @@ private fun HomeCountryCard(
     var status by remember { mutableStateOf<String?>(null) }
     var showCityPicker by remember { mutableStateOf(false) }
 
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             SettingSwitchRow(
                 title = "Home country",
                 subtitle = "Show your origin country clock on the Now card — e.g. India for family calls.",
@@ -1219,7 +1148,7 @@ private fun HomeCountryCard(
                     Spacer(Modifier.height(12.dp))
                     OutlinedButton(
                         onClick = { showCityPicker = true },
-                        shape = RoundedCornerShape(12.dp),
+                        shape = ExpressiveShapes.small,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Search, contentDescription = null)
@@ -1240,7 +1169,6 @@ private fun HomeCountryCard(
                     }
                 }
             }
-        }
     }
 
     if (showCityPicker) {
@@ -1261,14 +1189,7 @@ private fun HomeCountryCard(
 @Composable
 private fun AiEngineCard(hazeState: HazeState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Memory,
@@ -1298,7 +1219,7 @@ private fun AiEngineCard(hazeState: HazeState) {
                 Icon(
                     imageVector = Icons.Outlined.CheckCircle,
                     contentDescription = null,
-                    tint = Color(0xFF4CAF50),
+                    tint = GlassDefaults.positive,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
@@ -1308,7 +1229,6 @@ private fun AiEngineCard(hazeState: HazeState) {
                     fontSize = 12.sp
                 )
             }
-        }
     }
 }
 
@@ -1319,23 +1239,18 @@ private fun RemindersCard(
     hazeState: HazeState
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    val leadTimeOptions = listOf(
-        -1 to "Disabled",
-        5 to "5m",
-        10 to "10m",
-        15 to "15m",
-        30 to "30m",
-        60 to "1h"
-    )
+    val leadTimeOptions = remember {
+        listOf(
+            -1 to "Disabled",
+            5 to "5m",
+            10 to "10m",
+            15 to "15m",
+            30 to "30m",
+            60 to "1h"
+        )
+    }
 
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.NotificationsActive,
@@ -1370,14 +1285,10 @@ private fun RemindersCard(
                             viewModel.setReminderLeadMinutes(minutes)
                         },
                         label = { Text(label) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        colors = meridianFilterChipColors(),
                     )
                 }
             }
-        }
     }
 }
 
@@ -1388,14 +1299,7 @@ private fun WorkHoursCard(
     hazeState: HazeState
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     imageVector = Icons.Default.Work,
@@ -1415,69 +1319,34 @@ private fun WorkHoursCard(
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SettingsHourStepperRow(
+                HourStepperRow(
                     label = "Work Start Hour",
                     value = settings.defaultWorkStartHour,
-                    onChange = { viewModel.setDefaultWorkStartHour(it) }
+                    onChange = { newStart ->
+                        viewModel.setDefaultWorkStartHour(newStart)
+                        if (newStart >= settings.defaultWorkEndHour) {
+                            viewModel.setDefaultWorkEndHour(newStart + 1)
+                        }
+                    },
+                    haptics = LocalHapticFeedback.current,
+                    tint = MaterialTheme.colorScheme.primary,
+                    valueFontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                SettingsHourStepperRow(
+                HourStepperRow(
                     label = "Work End Hour",
                     value = settings.defaultWorkEndHour,
-                    onChange = { viewModel.setDefaultWorkEndHour(it) }
+                    onChange = { newEnd ->
+                        if (newEnd > settings.defaultWorkStartHour) {
+                            viewModel.setDefaultWorkEndHour(newEnd)
+                        }
+                    },
+                    haptics = LocalHapticFeedback.current,
+                    tint = MaterialTheme.colorScheme.primary,
+                    valueFontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun SettingsHourStepperRow(
-    label: String,
-    value: Int,
-    onChange: (Int) -> Unit
-) {
-    val haptics = LocalHapticFeedback.current
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text = label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            color = onSurface
-        )
-        IconButton(
-            onClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                onChange((value + 23) % 24)
-            }
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Remove,
-                contentDescription = "Decrease",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-        Text(
-            text = "%02d:00".format(value),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = onSurface
-        )
-        IconButton(
-            onClick = {
-                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                onChange((value + 1) % 24)
-            }
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Add,
-                contentDescription = "Increase",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
     }
 }
 
@@ -1489,7 +1358,7 @@ private fun OnDeviceCard(hazeState: HazeState) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
+        shape = GlassDefaults.cardShape
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -1528,14 +1397,7 @@ private fun ReseedCard(viewModel: MainViewModel, hazeState: HazeState) {
                       else MaterialTheme.colorScheme.onPrimaryContainer,
         label = "reseedContentColor"
     )
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Text("Seed starter zones", color = onSurface, fontWeight = FontWeight.Medium)
             Text(
                 text = "Adds London, Tokyo, and New York to your pinned zones.",
@@ -1554,7 +1416,7 @@ private fun ReseedCard(viewModel: MainViewModel, hazeState: HazeState) {
                     containerColor = buttonContainerColor,
                     contentColor = buttonContentColor
                 ),
-                shape = RoundedCornerShape(12.dp),
+                shape = ExpressiveShapes.small,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 AnimatedVisibility(visible = seeded, enter = fadeIn(), exit = fadeOut()) {
@@ -1572,7 +1434,6 @@ private fun ReseedCard(viewModel: MainViewModel, hazeState: HazeState) {
                     }
                 }
             }
-        }
     }
 }
 
@@ -1588,6 +1449,12 @@ private fun LegalNoticeSheet(
     val clipboard = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
     var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(2000)
+            copied = false
+        }
+    }
 
     GlassBottomSheet(onDismissRequest = onDismiss, hazeState = hazeState) {
         Column(
@@ -1617,7 +1484,7 @@ private fun LegalNoticeSheet(
                 Spacer(Modifier.height(12.dp))
                 OutlinedButton(
                     onClick = { openWebUrl(context, SettingsUrls.GOOGLE_PRIVACY) },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = ExpressiveShapes.small,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Google Privacy Policy")
@@ -1625,7 +1492,7 @@ private fun LegalNoticeSheet(
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(
                     onClick = { openWebUrl(context, SettingsUrls.FIREBASE_TERMS) },
-                    shape = RoundedCornerShape(12.dp),
+                    shape = ExpressiveShapes.small,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Firebase Terms of Service")
@@ -1669,13 +1536,19 @@ private fun AboutCard(hazeState: HazeState) {
     val haptics = LocalHapticFeedback.current
     val versionLabel = remember { appVersionLabel(context) }
     var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            kotlinx.coroutines.delay(2000)
+            copied = false
+        }
+    }
 
     GlassCard(
         hazeState = hazeState,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = GlassDefaults.cardShape,
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1744,7 +1617,7 @@ private fun LegalNoticesCard(hazeState: HazeState) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = GlassDefaults.cardShape,
     ) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
             Text(
@@ -1809,7 +1682,7 @@ private fun SupportCard(hazeState: HazeState) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = GlassDefaults.cardShape,
     ) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
             Text(
@@ -1847,14 +1720,7 @@ private fun DataManagementCard(hazeState: HazeState) {
     val context = LocalContext.current
     val onSurface = MaterialTheme.colorScheme.onSurface
 
-    GlassCard(
-        hazeState = hazeState,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+    SettingsCard(hazeState = hazeState) {
             Text("Manage local data", color = onSurface, fontWeight = FontWeight.Medium)
             Text(
                 text = "Meridian stores zones, planner data, and preferences on this device. " +
@@ -1866,20 +1732,20 @@ private fun DataManagementCard(hazeState: HazeState) {
             )
             OutlinedButton(
                 onClick = { openAppSettings(context) },
-                shape = RoundedCornerShape(12.dp),
+                shape = ExpressiveShapes.small,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.Storage, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("Open app storage settings")
             }
-        }
     }
 }
 
 @Composable
 private fun SettingsFooter() {
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val year = remember { java.time.Year.now().value }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1887,7 +1753,7 @@ private fun SettingsFooter() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "© ${java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)} Meridian",
+            text = "© $year Meridian",
             style = MaterialTheme.typography.labelSmall,
             color = onSurface.copy(alpha = 0.4f),
         )
@@ -1912,6 +1778,7 @@ private fun SettingsLinkRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics { role = Role.Button }
             .clickable {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClick()

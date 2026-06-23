@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.data.SavedZone
 import com.example.core.designsystem.GlassDatePickerSheet
+import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassFormBottomSheet
 import com.example.core.designsystem.GlassTimePickerSheet
 import com.example.ui.components.ZoneSearchPicker
@@ -64,7 +65,7 @@ fun JumpToPlaceDateTimeModal(
     val nowZdt = remember(localZoneId) { ZonedDateTime.now(ZoneId.of(localZoneId)) }
     var selectedDate by remember { mutableStateOf(nowZdt.toLocalDate()) }
     var selectedHour by remember { mutableIntStateOf(nowZdt.hour) }
-    var selectedMinute by remember { mutableIntStateOf(0) }
+    var selectedMinute by remember { mutableIntStateOf(nowZdt.minute) }
 
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -78,8 +79,9 @@ fun JumpToPlaceDateTimeModal(
 
     val targetZdt = remember(selectedDate, selectedHour, selectedMinute, selectedZoneId) {
         selectedZoneId?.let { zoneId ->
-            selectedDate.atTime(selectedHour, selectedMinute)
-                .atZone(ZoneId.of(zoneId))
+            runCatching {
+                selectedDate.atTime(selectedHour, selectedMinute).atZone(ZoneId.of(zoneId))
+            }.getOrNull()
         }
     }
 
@@ -93,6 +95,33 @@ fun JumpToPlaceDateTimeModal(
     val dateLabel = remember(selectedDate) { selectedDate.format(TimeFormats.mediumDate()) }
     val timeLabel = remember(selectedHour, selectedMinute, is24Hour) {
         LocalTime.of(selectedHour, selectedMinute).format(TimeFormats.hourMinute(is24Hour))
+    }
+
+    // These must be unconditional (Compose rules of hooks) — formerly inside selectedZoneId?.let.
+    val effectiveZoneId = selectedZoneId ?: localZoneId
+    val displayName = remember(selectedZoneId, selectedZoneLabel, localLocationName) {
+        if (selectedZoneId == null || selectedZoneId == localZoneId) localLocationName else selectedZoneLabel
+    }
+    val offsetDifference = remember(selectedZoneId, localZoneId) {
+        val now = Instant.now()
+        val targetOffset = ZoneId.of(effectiveZoneId).rules.getOffset(now)
+        val localOffset = ZoneId.of(localZoneId).rules.getOffset(now)
+        val diffSeconds = targetOffset.totalSeconds - localOffset.totalSeconds
+        val diffHours = diffSeconds / 3600.0
+        if (diffHours == 0.0) {
+            "same time"
+        } else {
+            val sign = if (diffHours > 0) "+" else "-"
+            val absHours = kotlin.math.abs(diffHours)
+            val hourStr = if (absHours % 1 == 0.0) absHours.toInt().toString() else absHours.toString()
+            "$sign${hourStr}h"
+        }
+    }
+    val targetTimeFormatted = remember(selectedDate, selectedHour, selectedMinute, is24Hour) {
+        LocalTime.of(selectedHour, selectedMinute).format(TimeFormats.hourMinute(is24Hour))
+    }
+    val targetDateFormatted = remember(selectedDate) {
+        selectedDate.format(TimeFormats.mediumDate())
     }
 
     GlassFormBottomSheet(
@@ -136,39 +165,13 @@ fun JumpToPlaceDateTimeModal(
                 )
 
                 // Display selected place details card
+                val placeCardColors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
+                )
                 selectedZoneId?.let { zoneId ->
-                    val displayName = remember(zoneId, selectedZoneLabel, localLocationName) {
-                        if (zoneId == localZoneId) localLocationName else selectedZoneLabel
-                    }
-
-                    val offsetDifference = remember(zoneId, localZoneId) {
-                        val targetOffset = ZoneId.of(zoneId).rules.getOffset(Instant.now())
-                        val localOffset = ZoneId.of(localZoneId).rules.getOffset(Instant.now())
-                        val diffSeconds = targetOffset.totalSeconds - localOffset.totalSeconds
-                        val diffHours = diffSeconds / 3600.0
-                        if (diffHours == 0.0) {
-                            "same time"
-                        } else {
-                            val sign = if (diffHours > 0) "+" else "-"
-                            val absHours = kotlin.math.abs(diffHours)
-                            val hourStr = if (absHours % 1 == 0.0) absHours.toInt().toString() else absHours.toString()
-                            "$sign${hourStr}h"
-                        }
-                    }
-
-                    val targetTimeFormatted = remember(selectedDate, selectedHour, selectedMinute, is24Hour) {
-                        LocalTime.of(selectedHour, selectedMinute).format(TimeFormats.hourMinute(is24Hour))
-                    }
-
-                    val targetDateFormatted = remember(selectedDate) {
-                        selectedDate.format(TimeFormats.mediumDate())
-                    }
-
                     Card(
-                        shape = RoundedCornerShape(28.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                        ),
+                        shape = GlassDefaults.cardShape,
+                        colors = placeCardColors,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -244,13 +247,14 @@ fun JumpToPlaceDateTimeModal(
                 }
 
                 // Local Equivalent callout box
+                val calloutCardColors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+                )
                 localEquivalent?.let {
                     if (selectedZoneId != localZoneId) {
                         Card(
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
-                            ),
+                            colors = calloutCardColors,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
@@ -279,13 +283,15 @@ fun JumpToPlaceDateTimeModal(
     )
 
     if (showDatePicker) {
-        val initialMillis = selectedDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        // Use the selected zone (not UTC) to avoid off-by-one day in UTC-12 and similar offsets.
+        val pickerZone = ZoneId.of(selectedZoneId ?: localZoneId)
+        val initialMillis = selectedDate.atStartOfDay(pickerZone).toInstant().toEpochMilli()
         GlassDatePickerSheet(
             onDismissRequest = { showDatePicker = false },
             hazeState = hazeState,
             initialSelectedDateMillis = initialMillis,
             onConfirm = { millis ->
-                selectedDate = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                selectedDate = Instant.ofEpochMilli(millis).atZone(pickerZone).toLocalDate()
                 showDatePicker = false
             },
         )
@@ -315,16 +321,18 @@ private fun SelectorTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val tileColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+    )
     Card(
-        shape = RoundedCornerShape(0.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        ),
+        onClick = onClick,
+        shape = GlassDefaults.cardShape,
+        colors = tileColors,
         border = BorderStroke(
             width = 1.dp,
             color = MaterialTheme.colorScheme.outlineVariant
         ),
-        modifier = modifier.clickable(onClick = onClick)
+        modifier = modifier
     ) {
         Row(
             modifier = Modifier

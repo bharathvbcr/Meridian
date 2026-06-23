@@ -29,7 +29,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +51,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import com.example.core.data.SavedZone
+import com.example.core.designsystem.meridianFilterChipColors
 import com.example.core.time.TimeFormats
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -196,11 +196,7 @@ private fun QuickZoneChips(
     onCustomChipClick: () -> Unit,
     showSectionLabel: Boolean,
 ) {
-    val chipColors = FilterChipDefaults.filterChipColors(
-        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
-    )
+    val chipColors = meridianFilterChipColors()
 
     Column {
         if (showSectionLabel) {
@@ -261,6 +257,17 @@ private fun ZoneSearchResults(
     onPickZone: (SavedZone) -> Unit,
     visible: Boolean = true,
 ) {
+    // Hoisted above AnimatedVisibility so results survive show/hide cycles without flashing
+    // "No matching time zones" on every re-entry.
+    val results by produceState(initialValue = emptyList<SavedZone>(), zoneQuery) {
+        value = if (zoneQuery.isBlank()) {
+            emptyList()
+        } else {
+            delay(120)
+            searchZones(zoneQuery)
+        }
+    }
+
     AnimatedVisibility(
         visible = visible && zoneQuery.isNotBlank(),
         enter = fadeIn() + expandVertically(
@@ -270,14 +277,6 @@ private fun ZoneSearchResults(
             shrinkTowards = if (expandFromBottom) Alignment.Bottom else Alignment.Top
         )
     ) {
-        val results by produceState(initialValue = emptyList<SavedZone>(), zoneQuery) {
-            value = if (zoneQuery.isBlank()) {
-                emptyList()
-            } else {
-                delay(120)
-                searchZones(zoneQuery)
-            }
-        }
         if (results.isEmpty()) {
             Text(
                 text = "No matching time zones",
@@ -286,10 +285,11 @@ private fun ZoneSearchResults(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
         } else {
+            val cardColors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            )
             Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                ),
+                colors = cardColors,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 165.dp)

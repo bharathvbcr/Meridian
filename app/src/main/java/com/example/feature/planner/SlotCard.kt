@@ -30,12 +30,12 @@ import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -46,10 +46,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.core.designsystem.PlannerCard
 import com.example.core.time.FindOverlapUseCase.OverlapSlot
 import com.example.core.time.LocalView
 import com.example.core.time.TimeFormats
@@ -101,15 +105,12 @@ internal fun SlotCard(
         label = "chevron"
     )
 
-    Card(
+    PlannerCard(
         modifier = modifier
             .fillMaxWidth()
-            .let { if (interactive) it.clickable(onClick = onToggle) else it },
-        shape = RoundedCornerShape(28.dp),
-        colors = plannerCardColors()
+            .let { if (interactive) it.clickable(onClick = onToggle, role = Role.Button) else it },
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "$localTime – $localEndTime · $localDateStr",
@@ -166,6 +167,7 @@ internal fun SlotCard(
                         thickness = 1.dp
                     )
                     Spacer(Modifier.height(16.dp))
+                    val calendarButtonColors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
@@ -178,9 +180,7 @@ internal fun SlotCard(
                                 )
                             },
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
+                            colors = calendarButtonColors,
                         ) {
                             Icon(Icons.Default.Event, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
@@ -236,7 +236,6 @@ internal fun SlotCard(
             }
         }
     }
-}
 
 @Composable
 internal fun RatingBadge(label: String) {
@@ -250,6 +249,7 @@ internal fun RatingBadge(label: String) {
             .clip(RoundedCornerShape(50))
             .background(color.copy(alpha = 0.18f))
             .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics { contentDescription = "Meeting quality: $label" }
     ) {
         Text(
             text = label,
@@ -288,7 +288,7 @@ internal fun ParticipantTag(
     val style = localViewStyle(view)
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(50))
             .background(style.color.copy(alpha = 0.14f))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
@@ -332,6 +332,7 @@ internal fun ParticipantTag(
     }
 }
 
+@Stable
 internal data class LocalViewStyle(val icon: ImageVector, val label: String, val color: Color)
 
 @Composable

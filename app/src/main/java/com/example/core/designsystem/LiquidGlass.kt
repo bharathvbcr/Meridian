@@ -2,14 +2,22 @@ package com.example.core.designsystem
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import android.view.accessibility.AccessibilityManager
+import com.example.BuildConfig
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -98,34 +106,88 @@ object GlassDefaults {
 
     /** Unified corner radius for all standard glass cards/surfaces. */
     val cardShape: Shape = RoundedCornerShape(28.dp)
+
+    /** Corner radius for floating DropdownMenus / context menus (Material `shapes.medium`). */
+    val menuShape: Shape = RoundedCornerShape(20.dp)
+
+    /** Day/night sun & moon ICON accent. Shared semantic token so day-vs-night reads identically
+     *  across Now and World Clock (the literals these replace are also duplicated ~25x). */
+    val daylightAccent: Color
+        @Composable get() = Color(0xFFFFD166)
+    val nightAccent: Color
+        @Composable get() = Color(0xFF90D2FF)
+
+    /** Day/night card GLOW. Distinct hue pair previously diverged from the icon accent; kept as
+     *  separate tokens but documented as the glow counterpart of [daylightAccent]/[nightAccent]. */
+    val daylightGlow: Color
+        @Composable get() = Color(0xFFFFB703)
+    val nightGlow: Color
+        @Composable get() = Color(0xFF219EBC)
+
+    /** Success / "granted" green for permission status and similar positive states. */
+    val positive: Color
+        @Composable get() = Color(0xFF4CAF50)
 }
 
 /**
- * Accesses system accessibility states for high contrast and reduce transparency settings (if available).
+ * Reactively tracks whether the system high-contrast (reduce-transparency) flag is enabled.
+ * Uses the public API on API 31+ and registers a live listener so the result updates while
+ * the app is in the foreground. Returns false below API 31.
  */
 @Composable
 fun rememberReduceTransparency(): Boolean {
     val context = LocalContext.current
-    return remember(context) {
-        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager ?: return@remember false
-        val isSystemHighContrast = try {
-            val highContrastMethod = am.javaClass.getMethod("isHighContrastTextEnabled")
-            highContrastMethod.invoke(am) as? Boolean ?: false
-        } catch (e: Exception) {
+    var highContrast by remember(context) {
+        val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+        val initial = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            am.readHighTextContrastEnabled()
+        } else {
             false
         }
-        
-        isSystemHighContrast
+        mutableStateOf(initial)
+    }
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        DisposableEffect(context) {
+            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager
+            val listener = AccessibilityManager.AccessibilityStateChangeListener {
+                highContrast = am.readHighTextContrastEnabled()
+            }
+            am?.addAccessibilityStateChangeListener(listener)
+            onDispose { am?.removeAccessibilityStateChangeListener(listener) }
+        }
+    }
+
+    return highContrast
+}
+
+/**
+ * Reads the system "high text contrast" flag, which doubles as the reduce-transparency signal.
+ * [AccessibilityManager.isHighTextContrastEnabled] is hidden (`@hide`) in the public SDK, so it
+ * is read reflectively; any failure is treated as "not enabled".
+ */
+private fun AccessibilityManager?.readHighTextContrastEnabled(): Boolean {
+    if (this == null) return false
+    return try {
+        val method = javaClass.getMethod("isHighTextContrastEnabled")
+        method.invoke(this) as? Boolean ?: false
+    } catch (e: Exception) {
+        if (BuildConfig.DEBUG) Log.d("LiquidGlass", "isHighTextContrastEnabled unavailable", e)
+        false
     }
 }
 
 /**
- * A highly customizable Liquid Glass modifier that applies backdrop blur using Haze.
- * Automatically falls back to a clean, high-contrast, opaque Material You surface
- * when accessibility checks indicate "Reduce Transparency" is enabled or on unsupported platforms.
- * Applies the AGSL lens distortion and specular highlights on Android T (API 33) or higher.
+ * Content-safe Liquid Glass modifier: backdrop blur (Haze) + translucent tint + hairline border.
+ * Falls back to a clean, opaque Material You surface when "Reduce Transparency" is enabled or on
+ * unsupported platforms.
+ *
+ * This variant deliberately does NOT apply the AGSL lens-refraction RenderEffect, because that
+ * effect is applied to the node it lives on and therefore also distorts/erases any child content
+ * (see the long note in [glassImpl]). When you want the full refraction effect on a surface that
+ * holds content, use [LiquidGlassSurface], which renders the refracting glass in a separate layer
+ * *behind* the content.
  */
-@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun Modifier.liquidGlass(
     hazeState: HazeState,
@@ -146,6 +208,47 @@ fun Modifier.liquidGlass(
     // material — a milkier, more opaque scrim that reads as frosted glass rather than near-clear.
     // Use for floating chrome that must stand out over a busy backdrop (e.g. the time scrubbers).
     frosted: Boolean = false
+): Modifier = glassImpl(
+    hazeState, shape, borderWidth, tintColor, opaqueFallbackColor,
+    borderColor, distortion, blur, frosted, refract = false
+)
+
+/**
+ * Refracting Liquid Glass surface modifier — like [liquidGlass] but ALSO layers the AGSL lens
+ * distortion + specular highlight on top via a `graphicsLayer` RenderEffect.
+ *
+ * That RenderEffect processes the node AND its children, so this MUST only be applied to an empty,
+ * content-free layer. Prefer [LiquidGlassSurface], which wires this up correctly (a backdrop layer
+ * behind the content). Below API 33 / when glass is disabled it degrades to plain [liquidGlass].
+ */
+@Composable
+fun Modifier.liquidGlassBackdrop(
+    hazeState: HazeState,
+    shape: Shape = GlassDefaults.cardShape,
+    borderWidth: Dp = 0.5.dp,
+    tintColor: Color = GlassDefaults.cardTint,
+    opaqueFallbackColor: Color = MaterialTheme.colorScheme.surface,
+    borderColor: Color = Color.White.copy(alpha = 0.2f),
+    distortion: Float = 0.05f,
+    frosted: Boolean = false
+): Modifier = glassImpl(
+    hazeState, shape, borderWidth, tintColor, opaqueFallbackColor,
+    borderColor, distortion, blur = true, frosted = frosted, refract = true
+)
+
+@OptIn(ExperimentalHazeMaterialsApi::class)
+@Composable
+private fun Modifier.glassImpl(
+    hazeState: HazeState,
+    shape: Shape,
+    borderWidth: Dp,
+    tintColor: Color,
+    opaqueFallbackColor: Color,
+    borderColor: Color,
+    distortion: Float,
+    blur: Boolean,
+    frosted: Boolean,
+    refract: Boolean,
 ): Modifier {
     // Fall back to an opaque Material surface when the system requests reduced transparency,
     // the user disables the glass compositor, or the user forces reduced transparency (§12.13).
@@ -170,7 +273,7 @@ fun Modifier.liquidGlass(
             .border(borderWidth, borderColor, shape)
     }
 
-    // Base layout with Haze backdrop blur
+    // Base layout with Haze backdrop blur.
     var processedModifier = this
         .clip(shape)
         .hazeEffect(
@@ -180,40 +283,87 @@ fun Modifier.liquidGlass(
         .border(borderWidth, borderColor, shape)
         .background(tintColor)
 
-    // Enhance with AGSL refraction on API 33+ (Android 13+). The RuntimeShader is compiled once
-    // and remembered — building it inside the graphicsLayer block recompiled the AGSL on every
-    // single draw/scroll frame, which was a major source of jank. Only the size-dependent
-    // resolution uniform is updated per-draw.
-    val refractionShader = remember(distortion, tintColor) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            runCatching {
-                android.graphics.RuntimeShader(REFRACTION_SHADER_SRC).apply {
-                    setFloatUniform("distortion", distortion)
-                    setFloatUniform("tintColor", tintColor.red, tintColor.green, tintColor.blue, tintColor.alpha)
-                }
-            }.getOrNull()
-        } else {
-            null
+    // AGSL lens refraction + specular highlight, applied as a graphicsLayer RenderEffect.
+    // This RenderEffect processes this node AND its children, so it is gated behind `refract`,
+    // which is only ever true on a content-free backdrop layer (see [LiquidGlassSurface]). Applying
+    // it to a node that holds content would distort/erase that content. The RuntimeShader and
+    // RenderEffect are built once and remembered; only the size-dependent resolution uniform is
+    // updated per draw.
+    if (refract) {
+        data class ShaderHolder(
+            val shader: android.graphics.RuntimeShader,
+            val effect: android.graphics.RenderEffect
+        )
+        val shaderHolder = remember(distortion, tintColor) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                runCatching {
+                    val shader = android.graphics.RuntimeShader(REFRACTION_SHADER_SRC).apply {
+                        setFloatUniform("distortion", distortion)
+                        setFloatUniform("tintColor", tintColor.red, tintColor.green, tintColor.blue, tintColor.alpha)
+                    }
+                    val effect = android.graphics.RenderEffect
+                        .createRuntimeShaderEffect(shader, "inputTexture")
+                    ShaderHolder(shader, effect)
+                }.onFailure { e ->
+                    if (BuildConfig.DEBUG) Log.e("LiquidGlass", "AGSL compile error", e)
+                }.getOrNull()
+            } else {
+                null
+            }
         }
-    }
-    if (refractionShader != null) {
-        processedModifier = processedModifier.then(
-            Modifier.graphicsLayer {
-                val widthVal = size.width
-                val heightVal = size.height
-                if (widthVal > 0f && heightVal > 0f) {
-                    try {
-                        refractionShader.setFloatUniform("resolution", widthVal, heightVal)
-                        renderEffect = android.graphics.RenderEffect
-                            .createRuntimeShaderEffect(refractionShader, "inputTexture")
-                            .asComposeRenderEffect()
-                    } catch (e: Exception) {
-                        // Fall back gracefully on devices with incomplete AGSL support (standard blur works)
+        if (shaderHolder != null) {
+            processedModifier = processedModifier.then(
+                Modifier.graphicsLayer {
+                    val widthVal = size.width
+                    val heightVal = size.height
+                    if (widthVal > 0f && heightVal > 0f) {
+                        try {
+                            shaderHolder.shader.setFloatUniform("resolution", widthVal, heightVal)
+                            renderEffect = shaderHolder.effect.asComposeRenderEffect()
+                        } catch (e: Exception) {
+                            if (BuildConfig.DEBUG) Log.e("LiquidGlass", "AGSL uniform error", e)
+                        }
                     }
                 }
-            }
-        )
+            )
+        }
     }
 
     return processedModifier
+}
+
+/**
+ * Two-layer Liquid Glass container: an empty refracting glass surface ([liquidGlassBackdrop]) drawn
+ * *behind* [content]. The AGSL lens refraction therefore warps only the blurred backdrop and never
+ * the content placed on top — which is exactly the bug that applying the effect to a content-bearing
+ * node caused (empty frosted cards). Use this anywhere a glass surface holds content and you want the
+ * full refraction; reach for the plain [liquidGlass] modifier only for backgrounds without content.
+ */
+@Composable
+fun LiquidGlassSurface(
+    hazeState: HazeState,
+    modifier: Modifier = Modifier,
+    shape: Shape = GlassDefaults.cardShape,
+    borderWidth: Dp = 0.5.dp,
+    tintColor: Color = GlassDefaults.cardTint,
+    borderColor: Color = Color.White.copy(alpha = 0.2f),
+    frosted: Boolean = false,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(modifier.clip(shape)) {
+        // Content-free backdrop layer: it is the only thing the refraction RenderEffect touches.
+        Box(
+            Modifier
+                .matchParentSize()
+                .liquidGlassBackdrop(
+                    hazeState = hazeState,
+                    shape = shape,
+                    borderWidth = borderWidth,
+                    tintColor = tintColor,
+                    borderColor = borderColor,
+                    frosted = frosted,
+                )
+        )
+        content()
+    }
 }
