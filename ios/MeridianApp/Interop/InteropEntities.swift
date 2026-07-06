@@ -175,6 +175,12 @@ struct InteropSnapshot: Codable, Sendable {
     let events: [InteropEvent]
     let zones: [InteropZone]
     let people: [InteropPerson]
+    /// Contract sections Meridian doesn't own (Android's provider declared these
+    /// tables and served empty cursors). Always written as `[]` and never read —
+    /// present so the payload shape matches the full cross-app contract.
+    let habits: [InteropOpaqueRecord]
+    let medications: [InteropOpaqueRecord]
+    let goals: [InteropOpaqueRecord]
 
     static let currentVersion = 1
 
@@ -206,7 +212,45 @@ struct InteropSnapshot: Codable, Sendable {
         self.events = events
         self.zones = zones
         self.people = people
+        self.habits = []
+        self.medications = []
+        self.goals = []
     }
+
+    /// Tolerant decode: a peer snapshot may omit the sections it doesn't own.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        authorBundleId = try c.decode(String.self, forKey: .authorBundleId)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        tasks = try c.decodeIfPresent([InteropTask].self, forKey: .tasks) ?? []
+        events = try c.decodeIfPresent([InteropEvent].self, forKey: .events) ?? []
+        zones = try c.decodeIfPresent([InteropZone].self, forKey: .zones) ?? []
+        people = try c.decodeIfPresent([InteropPerson].self, forKey: .people) ?? []
+        habits = try c.decodeIfPresent([InteropOpaqueRecord].self, forKey: .habits) ?? []
+        medications = try c.decodeIfPresent([InteropOpaqueRecord].self, forKey: .medications) ?? []
+        goals = try c.decodeIfPresent([InteropOpaqueRecord].self, forKey: .goals) ?? []
+    }
+}
+
+// MARK: - InteropOpaqueRecord
+
+/// A schema-agnostic element for contract sections Meridian never authors or
+/// consumes (habits/medications/goals). Decodes ANY object shape without failing
+/// so a peer's populated section can't break snapshot parsing; encodes `{}`
+/// (Meridian only ever writes these sections empty).
+struct InteropOpaqueRecord: Codable, Sendable {
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        // Intentionally ignore the record's contents — Meridian never reads them.
+    }
+
+    func encode(to encoder: Encoder) throws {
+        _ = encoder.container(keyedBy: NoKeys.self)
+    }
+
+    private enum NoKeys: CodingKey {}
 }
 
 // MARK: - Shared JSON coders

@@ -16,6 +16,9 @@ struct PlannedTaskRow: View {
     @State private var showShareSheet = false
     @State private var errorText: String? = nil
     @State private var feedbackTick = 0
+    @State private var addedToCalendar = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendarRepo = CalendarRepository()
 
@@ -34,9 +37,17 @@ struct PlannedTaskRow: View {
     }
 
     var body: some View {
-        GlassCard(cornerRadius: 16, padding: 12) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
+        GlassCard(cornerRadius: MeridianRadius.small.rawValue, padding: MeridianSpacing.md.rawValue) {
+            HStack(spacing: MeridianSpacing.sm.rawValue) {
+                // Leading accent rule — signals these are actionable plan items,
+                // mirroring ZoneTimeRow's day/night indicator pattern.
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(MeridianColors.primary)
+                    .frame(width: 3)
+                    .frame(maxHeight: .infinity)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue / 2) {
                     Text(task.title)
                         .font(.titleMedium)
                         .fontWeight(.bold)
@@ -47,17 +58,37 @@ struct PlannedTaskRow: View {
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
                         .lineLimit(1)
                 }
-                Spacer(minLength: 4)
+                .accessibilityElement(children: .combine)
+                Spacer(minLength: MeridianSpacing.xs.rawValue)
 
-                iconButton("calendar", tint: MeridianColors.primary, label: "Add to calendar") {
+                iconButton(
+                    addedToCalendar ? "checkmark.circle.fill" : "calendar",
+                    tint: addedToCalendar ? MeridianColors.positive : MeridianColors.primary,
+                    label: addedToCalendar ? "Added to calendar" : "Add to calendar"
+                ) {
                     Task { await addToCalendar() }
                 }
                 iconButton("square.and.arrow.up", tint: MeridianColors.onSurfaceVariant, label: "Share invite") {
                     prepareICS()
                 }
-                iconButton("trash", tint: .red, label: "Delete") {
+                iconButton("trash", tint: MeridianColors.error, label: "Delete") {
                     onDelete()
                 }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .contextMenu {
+            Button("Add to calendar", systemImage: "calendar") {
+                feedbackTick += 1
+                Task { await addToCalendar() }
+            }
+            Button("Share invite", systemImage: "square.and.arrow.up") {
+                feedbackTick += 1
+                prepareICS()
+            }
+            Button("Delete", systemImage: "trash", role: .destructive) {
+                feedbackTick += 1
+                onDelete()
             }
         }
         .sensoryFeedback(.impact(weight: .light), trigger: feedbackTick)
@@ -70,7 +101,9 @@ struct PlannedTaskRow: View {
             if let errorText {
                 Text(errorText)
                     .font(.labelMedium)
-                    .foregroundStyle(Color.red.opacity(0.85))
+                    .foregroundStyle(MeridianColors.error.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isStaticText)
             }
         }
     }
@@ -88,10 +121,13 @@ struct PlannedTaskRow: View {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(tint)
-                .frame(width: 36, height: 36)
+                // 44 pt minimum iOS touch target; the glyph stays 17 pt.
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
 
     @MainActor
@@ -102,7 +138,14 @@ struct PlannedTaskRow: View {
             durationMinutes: defaultEventDurationMinutes,
             zoneId: task.tzId
         )
-        if case let .failure(reason) = result { errorText = reason }
+        switch result {
+        case .success:
+            errorText = nil
+            // Flip the calendar glyph to a success checkmark, matching SlotCard.
+            withAnimation(reduceMotion ? nil : Motion.snappy()) { addedToCalendar = true }
+        case let .failure(reason):
+            errorText = reason
+        }
     }
 
     private func prepareICS() {

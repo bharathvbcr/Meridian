@@ -168,7 +168,10 @@ private extension CalendarEventModel {
             calendarColorComponents: colorComponents,
             notes: event.notes,
             location: event.location,
-            hasAttendees: !(event.attendees?.isEmpty ?? true)
+            hasAttendees: !(event.attendees?.isEmpty ?? true),
+            // Android reads EVENT_TIMEZONE; EventKit exposes the same via `timeZone`
+            // (nil for floating/all-day events — renderers fall back to the device zone).
+            timeZoneId: event.timeZone?.identifier
         )
     }
 }

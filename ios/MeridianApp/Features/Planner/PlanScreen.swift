@@ -112,6 +112,14 @@ private struct PlanScreenContent: View {
     @Binding var showAddSheet: Bool
     @Binding var calendarGranted: Bool
 
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.selectTab) private var selectTab
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // Hide-on-scroll state for the pinned dial (Android: dialVisible).
+    @State private var dialVisible = true
+    @State private var lastScrollOffset: CGFloat = 0
+
     // MARK: Data derivations
 
     private var localLocationName: String {
@@ -209,7 +217,7 @@ private struct PlanScreenContent: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             LinearGradient(
-                colors: [Color(hex: "020617"), Color(hex: "0F172A")],
+                colors: [MeridianColors.background, MeridianColors.surface],
                 startPoint: .top, endPoint: .bottom
             )
             .ignoresSafeArea()
@@ -217,6 +225,7 @@ private struct PlanScreenContent: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 12) {
                     PlannerHeaderView()
+                        .reportScrollOffset(in: "plannerScroll")
                     DetailsCard(title: $meetingTitle)
                     ParticipantsCard(
                         locationGroups: locationGroups,
@@ -254,9 +263,23 @@ private struct PlanScreenContent: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
+            .coordinateSpace(name: "plannerScroll")
+            .onPreferenceChange(ScrollOffsetKey.self) { offset in
+                // Hide the dial while scrolling down, reveal on scroll-up or at the top
+                // (Android PlanScreen: dialVisible from firstVisibleItemIndex/scrollOffset).
+                let delta = offset - lastScrollOffset
+                lastScrollOffset = offset
+                let shouldShow = offset >= -8 || delta > 4
+                let shouldHide = delta < -4 && offset < -8
+                if shouldShow, !dialVisible {
+                    withAnimation(Motion.reduced(Motion.smooth(), reduceMotion: reduceMotion)) { dialVisible = true }
+                } else if shouldHide, dialVisible {
+                    withAnimation(Motion.reduced(Motion.smooth(), reduceMotion: reduceMotion)) { dialVisible = false }
+                }
+            }
 
             // Pinned fair-time dial above the tab bar (mirrors the World screen).
-            if !rankedSlots.isEmpty {
+            if !rankedSlots.isEmpty, dialVisible {
                 FairSlotsScrubber(
                     hours: dialHours,
                     selectedIndex: selectedIndex,
@@ -267,8 +290,14 @@ private struct PlanScreenContent: View {
                         selectedSlotInstant = dialHours.indices.contains(idx) ? dialHours[idx].instant : nil
                     }
                 )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 96)
+                .padding(.horizontal, MeridianSpacing.lg.rawValue)
+                // Reuse the design-system pill↔dial transition (reduce-motion aware: it
+                // collapses to a plain cross-fade), matching the World-screen scrubber this
+                // Planner dial explicitly mirrors.
+                .transition(Motion.scrubberContentTransition(reduceMotion: reduceMotion))
+                // No extra bottom inset here: ContentView already reserves space for the floating
+                // tab bar via `.safeAreaInset(.bottom)`, which this bare (non-NavigationStack) screen
+                // inherits. Adding another 96pt would double-count and float the dial mid-screen.
             }
         }
         .task(id: TaskWindowKey(date: selectedDateMillis)) { await loadWindow() }
@@ -277,6 +306,16 @@ private struct PlanScreenContent: View {
             // Passive status check — never prompt on appear; the button requests access.
             calendarGranted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
             resetSelectionIfNeeded()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Re-check after the user grants access in system Settings and returns
+            // (Android re-checks on every RESUMED).
+            guard phase == .active else { return }
+            let granted = EKEventStore.authorizationStatus(for: .event) == .fullAccess
+            if granted != calendarGranted {
+                calendarGranted = granted
+                if granted { Task { await loadWindow() } }
+            }
         }
         .sheet(isPresented: $showAddSheet) { addPersonSheet }
         .sheet(isPresented: $showJumpModal) { jumpModal }
@@ -287,7 +326,11 @@ private struct PlanScreenContent: View {
     @ViewBuilder
     private var fairSlotsSection: some View {
         if rankedSlots.isEmpty {
-            SlotsEmptyState(hint: emptyHint)
+            SlotsEmptyState(
+                hint: emptyHint,
+                actionLabel: "Pick another day",
+                action: { showJumpModal = true }
+            )
         } else {
             if let slot = selectedSlot {
                 SlotCard(
@@ -302,20 +345,13 @@ private struct PlanScreenContent: View {
                     meetingTitle: meetingTitle
                 )
             }
-            Button {
+            OutlinedActionButton(
+                title: "Create rotating weekly series (4 weeks)",
+                systemImage: "repeat",
+                accessibilityHint: "Adds four weekly meetings that rotate the fair time across participants."
+            ) {
                 viewModel.createRotatingSeries(slots: rankedSlots, weeks: 4, zoneId: localZoneId, participantOrder: participants.map(\.zoneId))
-            } label: {
-                Label("Create rotating weekly series (4 weeks)", systemImage: "repeat")
-                    .font(.bodyLarge)
-                    .foregroundStyle(MeridianColors.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
-                    }
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -323,11 +359,22 @@ private struct PlanScreenContent: View {
 
     @ViewBuilder
     private var plannedTasksSection: some View {
-        if !viewModel.plannedTasks.isEmpty {
-            SectionLabel(
-                label: "YOUR PLAN  (\(viewModel.plannedTasks.count))",
-                subtitle: "Events from Quick Schedule and the AI assistant."
+        SectionLabel(
+            label: viewModel.plannedTasks.isEmpty
+                ? "YOUR PLAN"
+                : "YOUR PLAN  (\(viewModel.plannedTasks.count))",
+            subtitle: "Events from Quick Schedule and the AI assistant."
+        )
+
+        if viewModel.plannedTasks.isEmpty {
+            EmptyStateCard(
+                icon: "calendar.badge.plus",
+                title: "Nothing scheduled yet",
+                message: "Save a fair slot above, use Quick Schedule in AI, or ask the assistant to plan a meeting.",
+                actionLabel: "Ask AI",
+                action: { selectTab(.ai) }
             )
+        } else {
             ForEach(viewModel.plannedTasks, id: \.id) { task in
                 PlannedTaskRow(
                     task: task,
@@ -456,6 +503,64 @@ private struct PlanScreenContent: View {
     private func floorToHour(_ date: Date) -> Date {
         let seconds = (date.timeIntervalSinceReferenceDate / 3600).rounded(.down) * 3600
         return Date(timeIntervalSinceReferenceDate: seconds)
+    }
+}
+
+// MARK: - OutlinedActionButton
+
+/// The shared full-width outlined-primary CTA used across the Planner (rotating series here,
+/// and the visually-identical Jump / grant-calendar buttons in `PlannerComponents`). Factored
+/// so all copies stay on-token: `MeridianRadius.small` (12) corner, 1pt `primary@0.4` stroke,
+/// `.bodyLarge` primary label. Mirror-able to Android's shared outlined `Button` treatment.
+///
+/// Accessibility: exposes the `.isButton` trait, an optional hint, a pressed-scale feedback that
+/// honours Reduce Motion, and a >=44pt tap target (the label's 11pt vertical padding around a
+/// `.bodyLarge` line clears 44pt; `contentShape` makes the whole outlined pill tappable).
+private struct OutlinedActionButton: View {
+    let title: String
+    let systemImage: String
+    var accessibilityHint: String? = nil
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.bodyLarge)
+                .foregroundStyle(MeridianColors.primary)
+                .frame(maxWidth: .infinity)
+                // Shared metric with the sibling outlined buttons (Jump / grant-calendar). Not a
+                // spacing token — it is the canonical outlined-button inset, kept identical across
+                // all three CTAs. Around a `.bodyLarge` line this clears the 44pt tap-target floor.
+                .padding(.vertical, 11)
+                .contentShape(
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                )
+                .background {
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                        .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
+                }
+        }
+        .buttonStyle(OutlinedActionButtonStyle())
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(accessibilityHint ?? "")
+    }
+}
+
+/// Press feedback for `OutlinedActionButton`: a subtle scale-down on press with a light haptic,
+/// mirroring the design system's `NavPressStyle`. Reduce-Motion collapses the scale animation to
+/// a near-instant curve (via `Motion.reducedOrInstant`) while keeping the state change intact.
+private struct OutlinedActionButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(
+                Motion.reducedOrInstant(Motion.quick(), reduceMotion: reduceMotion),
+                value: configuration.isPressed
+            )
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, now in now }
     }
 }
 

@@ -4,11 +4,15 @@
 // The result of running the Meridian assistant. Ported from Android's
 // `GeminiRepository.AiResult` (core/ai/GeminiRepository.kt).
 //
-// `onDevice` reflects where inference actually ran — true for on-device
-// Foundation Models, false for the Gemini cloud fallback or the local
-// rules engine.
+// `source` reflects where inference actually ran — the on-device Foundation
+// Models path, the Gemini cloud fallback, or the local deterministic rules
+// engine. The three are kept distinct so the provenance badge in the chat is
+// always truthful (the rules engine is local/offline, not "Cloud").
 
 import Foundation
+
+// `InferenceSource` lives in Models.swift (next to ChatMessage): Models.swift is
+// also compiled into the widget target, which does not include this file.
 
 // MARK: - AiResult
 
@@ -29,8 +33,8 @@ import Foundation
 ///   consumed by `MainViewModel` (`@MainActor`), so main-actor isolation already
 ///   guarantees the safety that `Sendable` would otherwise provide.
 enum AiResult {
-    case success(text: String, onDevice: Bool)
-    case scheduled(task: PlannedTask, onDevice: Bool)
+    case success(text: String, source: InferenceSource)
+    case scheduled(task: PlannedTask, source: InferenceSource)
     case error(String)
 }
 

@@ -19,6 +19,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,10 +96,11 @@ internal fun CalendarEventsCard(
                 }
                 if (events.size > 5) {
                     Spacer(Modifier.height(8.dp))
+                    val overflow = events.size - 5
                     Text(
-                        text = "+${events.size - 5} more events this week",
+                        text = "+$overflow more events this week",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
             }
@@ -124,9 +127,14 @@ private fun CalendarEventRow(event: CalendarEvent, is24Hour: Boolean) {
     }
 
     Row(
+        // Read the whole event as one TalkBack node ("Standup, Jul 4, 9:00 – 9:30") instead of three
+        // separate stops for title, time and date. Mirrors the merged-semantics rows in SlotCard.
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "${event.title}, $dateLabel, $timeLabel"
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -143,10 +151,13 @@ private fun CalendarEventRow(event: CalendarEvent, is24Hour: Boolean) {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
         }
+        Spacer(Modifier.width(8.dp))
+        // Demoted from the primary accent so the event title reads first; accent stays reserved for
+        // the meeting-slot RatingBadge, keeping the accent's meaning consistent across the tab.
         Text(
             text = dateLabel,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
         )
     }
 }

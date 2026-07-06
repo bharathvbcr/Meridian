@@ -1,11 +1,13 @@
 package com.example.feature.ai
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -43,7 +45,9 @@ fun ChatMarkdownText(
 
     Markdown(
         content = text,
-        modifier = modifier,
+        // Group the rendered blocks so TalkBack reads the reply as one unit
+        // instead of stopping on every paragraph, heading and list item.
+        modifier = modifier.semantics(mergeDescendants = true) {},
         colors = chatMarkdownColors(textColor = textColor),
         typography = chatMarkdownTypography(body = body, linkColor = linkColor),
         padding = chatMarkdownPadding(),
@@ -63,29 +67,38 @@ private fun chatMarkdownColors(textColor: Color) = markdownColor(
 )
 
 @Composable
-private fun chatMarkdownTypography(body: TextStyle, linkColor: Color) = markdownTypography(
-    h1 = body.copy(fontWeight = FontWeight.Bold),
-    h2 = body.copy(fontWeight = FontWeight.Bold),
-    h3 = body.copy(fontWeight = FontWeight.SemiBold),
-    h4 = body.copy(fontWeight = FontWeight.SemiBold),
-    h5 = body.copy(fontWeight = FontWeight.Medium),
-    h6 = body.copy(fontWeight = FontWeight.Medium),
-    text = body,
-    paragraph = body,
-    ordered = body,
-    bullet = body,
-    list = body,
-    quote = body.copy(fontStyle = FontStyle.Italic),
-    code = body.copy(fontFamily = FontFamily.Monospace),
-    inlineCode = body.copy(fontFamily = FontFamily.Monospace),
-    textLink = TextLinkStyles(
-        style = body.copy(
-            color = linkColor,
-            fontWeight = FontWeight.Medium,
-            textDecoration = TextDecoration.Underline,
-        ).toSpanStyle(),
-    ),
-)
+private fun chatMarkdownTypography(body: TextStyle, linkColor: Color): com.mikepenz.markdown.model.MarkdownTypography {
+    // Step heading sizes along the app type scale so section structure stays
+    // scannable in longer replies, while keeping the bubble compact:
+    // h1 = titleMedium (16) Bold, h2 = bodyLarge (16) Bold, h3 = bodyLarge SemiBold,
+    // h4-h6 stay at body size and lean on weight. Sizes come from the theme so
+    // headings continue to honor the user's Dynamic Type / fontScale setting.
+    val titleMedium = MaterialTheme.typography.titleMedium
+    val bodyLarge = MaterialTheme.typography.bodyLarge
+    return markdownTypography(
+        h1 = titleMedium.copy(fontWeight = FontWeight.Bold),
+        h2 = bodyLarge.copy(fontWeight = FontWeight.Bold),
+        h3 = bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+        h4 = body.copy(fontWeight = FontWeight.Bold),
+        h5 = body.copy(fontWeight = FontWeight.SemiBold),
+        h6 = body.copy(fontWeight = FontWeight.Medium),
+        text = body,
+        paragraph = body,
+        ordered = body,
+        bullet = body,
+        list = body,
+        quote = body.copy(fontStyle = FontStyle.Italic),
+        code = body.copy(fontFamily = FontFamily.Monospace),
+        inlineCode = body.copy(fontFamily = FontFamily.Monospace),
+        textLink = TextLinkStyles(
+            style = body.copy(
+                color = linkColor,
+                fontWeight = FontWeight.Medium,
+                textDecoration = TextDecoration.Underline,
+            ).toSpanStyle(),
+        ),
+    )
+}
 
 @Composable
 private fun chatMarkdownPadding() = markdownPadding(

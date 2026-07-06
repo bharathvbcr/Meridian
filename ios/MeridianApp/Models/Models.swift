@@ -209,6 +209,9 @@ struct CalendarEventModel: Identifiable, Sendable {
     let notes: String?
     let location: String?
     let hasAttendees: Bool
+    /// The event's own IANA zone (Android: `EVENT_TIMEZONE`) so it renders at its
+    /// native wall-clock time, not the device's. `nil` for floating/all-day events.
+    let timeZoneId: String?
 
     init(
         id: String,
@@ -220,7 +223,8 @@ struct CalendarEventModel: Identifiable, Sendable {
         calendarColorComponents: [CGFloat]? = nil,
         notes: String? = nil,
         location: String? = nil,
-        hasAttendees: Bool = false
+        hasAttendees: Bool = false,
+        timeZoneId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -232,6 +236,7 @@ struct CalendarEventModel: Identifiable, Sendable {
         self.notes = notes
         self.location = location
         self.hasAttendees = hasAttendees
+        self.timeZoneId = timeZoneId
     }
 }
 
@@ -312,26 +317,50 @@ enum HourCycle: String, CaseIterable, Codable, Sendable {
     case twentyFour = "24h"
 }
 
+// MARK: - InferenceSource
+
+/// Where an assistant answer was actually computed. Defined here (not in
+/// AiResult.swift) because `ChatMessage` below carries it and this file is also
+/// compiled into the widget target.
+enum InferenceSource: String, Codable, Sendable {
+    /// Apple Foundation Models, fully on-device.
+    case onDevice
+    /// Gemini cloud (the only path that touches the network).
+    case cloud
+    /// The deterministic local rules engine — offline, no model involved.
+    case rules
+    /// Semantic cache hit — prior answer reused (<15 ms).
+    case cached
+}
+
 // MARK: - ChatMessage
 
 struct ChatMessage: Identifiable, Sendable {
     let id: UUID
     let isUser: Bool
     let text: String
-    let onDevice: Bool?
+    /// Where the answer was computed (`nil` for user/system messages that carry
+    /// no provenance). Distinguishes on-device / cloud / local rules so the
+    /// privacy badge is always truthful (Android: `ChatMessage.onDevice`).
+    let source: InferenceSource?
+    /// Marks a failed turn so the UI renders the error bubble
+    /// (Android: `sender == "System Error"`).
+    let isError: Bool
     let timestamp: Date
 
     init(
         id: UUID = UUID(),
         isUser: Bool,
         text: String,
-        onDevice: Bool? = nil,
+        source: InferenceSource? = nil,
+        isError: Bool = false,
         timestamp: Date
     ) {
         self.id = id
         self.isUser = isUser
         self.text = text
-        self.onDevice = onDevice
+        self.source = source
+        self.isError = isError
         self.timestamp = timestamp
     }
 }

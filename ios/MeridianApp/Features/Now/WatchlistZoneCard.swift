@@ -39,6 +39,8 @@ struct WatchlistZoneCard: View {
     @State private var expanded = false
     @State private var showAddContact = false
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // MARK: Derived
 
     private var timeZone: TimeZone { TimeFormats.safeTimeZone(id: zone.id) }
@@ -99,15 +101,46 @@ struct WatchlistZoneCard: View {
         return TimeFormats.hourMinute(date: d, timeZone: timeZone, use24Hour: use24Hour)
     }
 
+    /// Combined VoiceOver label for the collapsed header: zone, local time, and work status.
+    private var headerAccessibilityLabel: String {
+        var parts = [zone.displayName]
+        if zone.isFavorite { parts.append("Favorite") }
+        parts.append(isDaylight ? "daytime" : "night")
+        parts.append("\(timeString), \(dateString), \(utcOffsetString)")
+        parts.append(isWorkingHours ? "Working hours" : "Off hours")
+        return parts.joined(separator: ", ")
+    }
+
+    /// Toggles the expanded state. Animation is applied once at the view level via
+    /// `.animation(_:value: expanded)` (gated on Reduce Motion), so this only mutates
+    /// state — no `withAnimation` here, to avoid a redundant double-spring.
+    private func toggleExpanded() {
+        expanded.toggle()
+    }
+
     // MARK: Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerRow
+            HStack(alignment: .top, spacing: MeridianSpacing.md.rawValue) {
+                headerInfo
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleExpanded() }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(headerAccessibilityLabel)
+                    .accessibilityHint(expanded ? "Collapse zone details" : "Expand zone details")
+
+                optionsMenu
+            }
 
             if expanded {
                 expandedDetail
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .opacity.combined(with: .move(edge: .top))
+                    )
             }
         }
         .padding(MeridianSpacing.lg.rawValue)
@@ -127,15 +160,12 @@ struct WatchlistZoneCard: View {
                 .frame(width: 160, height: 160)
                 .offset(x: 36, y: -36)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous))
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                expanded.toggle()
-            }
-        }
-        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: expanded)
+        // Single source of truth for the expand/collapse animation; the tap handler
+        // mutates state without its own withAnimation to avoid a double-spring.
+        .animation(reduceMotion ? nil : Motion.snappy(), value: expanded)
         .sheet(isPresented: $showAddContact) {
             AddContactToZoneSheet(zoneName: zone.displayName) { name in
                 onAddContact(name)
@@ -146,14 +176,18 @@ struct WatchlistZoneCard: View {
 
     // MARK: Header
 
-    private var headerRow: some View {
-        HStack(alignment: .top, spacing: 12) {
+    /// Tappable informational cluster: zone glyph, name/date/status, time, and the
+    /// expand chevron. The overflow menu is a sibling (kept out of the combined a11y
+    /// element so it stays independently reachable by VoiceOver).
+    private var headerInfo: some View {
+        HStack(alignment: .top, spacing: MeridianSpacing.md.rawValue) {
             Image(systemName: isDaylight ? "sun.max.fill" : "moon.stars.fill")
                 .font(.system(size: 18))
                 .foregroundStyle(isDaylight ? MeridianColors.daylightAccent : MeridianColors.nightAccent)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue / 2) {
+                HStack(spacing: MeridianSpacing.sm.rawValue - 2) {
                     Text(zone.displayName)
                         .font(.titleMedium)
                         .foregroundStyle(MeridianColors.onSurface)
@@ -162,6 +196,7 @@ struct WatchlistZoneCard: View {
                         Image(systemName: "star.fill")
                             .font(.system(size: 11))
                             .foregroundStyle(MeridianColors.daylightAccent)
+                            .accessibilityHidden(true)
                     }
                 }
 
@@ -170,7 +205,7 @@ struct WatchlistZoneCard: View {
                     .foregroundStyle(MeridianColors.onSurfaceVariant)
 
                 Text(isWorkingHours ? "Working hours" : "Off hours")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.labelMedium)
                     .foregroundStyle(
                         isWorkingHours
                             ? MeridianColors.primary.opacity(0.85)
@@ -179,13 +214,13 @@ struct WatchlistZoneCard: View {
 
                 if !favoriteContacts.isEmpty {
                     contactPills
-                        .padding(.top, 4)
+                        .padding(.top, MeridianSpacing.xs.rawValue)
                 }
             }
 
-            Spacer(minLength: 8)
+            Spacer(minLength: MeridianSpacing.sm.rawValue)
 
-            HStack(spacing: 4) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
                 Text(timeString)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
@@ -195,22 +230,22 @@ struct WatchlistZoneCard: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(0.5))
                     .rotationEffect(.degrees(expanded ? 180 : 0))
-
-                optionsMenu
+                    .accessibilityHidden(true)
             }
         }
     }
 
     private var contactPills: some View {
         // Horizontal wrap of starred-contact pills.
-        FlowRow(spacing: 4) {
+        FlowRow(spacing: MeridianSpacing.xs.rawValue) {
             ForEach(favoriteContacts) { person in
                 HStack(spacing: 3) {
                     Image(systemName: "star.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(MeridianColors.daylightAccent)
+                        .accessibilityHidden(true)
                     Text(person.name)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.labelSmall)
                         .foregroundStyle(MeridianColors.onSurface)
                 }
                 .padding(.horizontal, 7)
@@ -264,9 +299,11 @@ struct WatchlistZoneCard: View {
             Image(systemName: "ellipsis")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(MeridianColors.onSurfaceVariant)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
+        .accessibilityLabel("Zone options")
+        .accessibilityHint("Favorite, add contact, reorder, or remove \(zone.displayName)")
     }
 
     // MARK: Expanded detail
@@ -275,9 +312,9 @@ struct WatchlistZoneCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
                 .overlay(MeridianColors.onSurface.opacity(0.12))
-                .padding(.vertical, 10)
+                .padding(.vertical, MeridianSpacing.md.rawValue - 2)
 
-            HStack(alignment: .top, spacing: 20) {
+            HStack(alignment: .top, spacing: MeridianSpacing.xl.rawValue) {
                 if let rise = sunString(sun.sunriseMinute) {
                     detailColumn(label: "Sunrise", value: rise, tint: MeridianColors.daylightAccent)
                 }
@@ -294,33 +331,37 @@ struct WatchlistZoneCard: View {
             Text(zone.id)
                 .font(.bodyMedium)
                 .foregroundStyle(MeridianColors.onSurface.opacity(0.35))
-                .padding(.top, 6)
+                .padding(.top, MeridianSpacing.sm.rawValue - 2)
+                .accessibilityLabel("Time zone identifier \(zone.id)")
 
             Divider()
                 .overlay(MeridianColors.onSurface.opacity(0.10))
-                .padding(.vertical, 10)
+                .padding(.vertical, MeridianSpacing.md.rawValue - 2)
 
             contactsSection
         }
     }
 
     private func detailColumn(label: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue / 2) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.labelMedium)
                 .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
             Text(value)
-                .font(.system(size: 13, weight: .bold))
+                .font(.titleMedium)
                 .foregroundStyle(tint == MeridianColors.onSurface ? MeridianColors.onSurface : tint)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 
     private var contactsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
+        VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue - 2) {
+            HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
+                    .accessibilityHidden(true)
                 Text("Contacts")
                     .font(.labelMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.65))
@@ -329,9 +370,13 @@ struct WatchlistZoneCard: View {
                     showAddContact = true
                 } label: {
                     Label("Add", systemImage: "person.badge.plus")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.primary)
+                        .padding(.vertical, MeridianSpacing.sm.rawValue)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add contact to \(zone.displayName)")
             }
 
             if favoriteContacts.isEmpty {
@@ -340,31 +385,42 @@ struct WatchlistZoneCard: View {
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.38))
             } else {
                 ForEach(favoriteContacts) { person in
-                    HStack {
+                    HStack(spacing: MeridianSpacing.xs.rawValue) {
                         Text(person.name)
                             .font(.bodyMedium)
                             .foregroundStyle(MeridianColors.onSurface)
-                        Spacer()
+                        Spacer(minLength: MeridianSpacing.sm.rawValue)
                         Button {
                             onToggleContactFavorite(person.id)
                         } label: {
                             Image(systemName: person.isFavorite ? "star.fill" : "star")
-                                .font(.system(size: 14))
+                                .font(.system(size: 16))
                                 .foregroundStyle(
                                     person.isFavorite
                                         ? MeridianColors.daylightAccent
                                         : MeridianColors.onSurface.opacity(0.35)
                                 )
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .sensoryFeedback(.selection, trigger: person.isFavorite)
+                        .accessibilityLabel(person.isFavorite ? "Unstar \(person.name)" : "Star \(person.name)")
+                        .accessibilityAddTraits(person.isFavorite ? .isSelected : [])
+
                         Button {
                             onRemoveContact(person.id)
                         } label: {
                             Image(systemName: "trash")
-                                .font(.system(size: 12))
-                                .foregroundStyle(Color.red.opacity(0.7))
+                                .font(.system(size: 15))
+                                .foregroundStyle(MeridianColors.error.opacity(0.85))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(person.name)")
+                        .accessibilityHint("Removes this contact from \(zone.displayName)")
                     }
-                    .padding(.vertical, 2)
                 }
             }
         }

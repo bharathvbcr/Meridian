@@ -55,6 +55,9 @@ final class MainViewModel {
     /// Whether the AI assistant is currently generating a response.
     var aiLoading: Bool = false
 
+    /// Partial assistant text while rules/cache/LLM paths stream into the UI.
+    var aiPartialText: String? = nil
+
     /// A model-proposed event awaiting explicit user confirmation before any write (§12.8).
     var pendingDraft: PlannedTask? = nil
 
@@ -63,6 +66,24 @@ final class MainViewModel {
 
     /// When `true`, the watchlist only shows favorited zones.
     var showFavoritesOnly: Bool = false
+
+    /// The device's last-known coordinate (system cache; no fresh fix). Feeds `homeLocation`.
+    private var deviceCoordinate: GeoPoint? = nil
+
+    /// Where to pin the home zone on the day/night map: the device's actual location, but only
+    /// while that fix plausibly lies inside the saved home zone (same clock as the zone nearest
+    /// the fix). Otherwise nil, and the map falls back to the zone's representative city — so a
+    /// home chosen manually for a faraway city still pins at that city (Android parity, §5.2).
+    var homeLocation: GeoPoint? {
+        guard let coordinate = deviceCoordinate,
+              let home = savedZones.first(where: { $0.isHome }) else { return nil }
+        return ZoneGeo.pointMatchesZoneClock(zoneId: home.id, point: coordinate) ? coordinate : nil
+    }
+
+    /// Re-reads the cached device fix (cheap, offline); safe to call without authorization.
+    func refreshDeviceCoordinate() {
+        deviceCoordinate = LocationZoneResolver().lastKnownCoordinate
+    }
 
     // MARK: - Dependencies
 
@@ -138,7 +159,6 @@ final class MainViewModel {
                 + "between cities, find fair meeting windows, and schedule events across time zones — "
                 + "on-device when your phone supports it, with cloud backup otherwise. Try \"What time "
                 + "is it in Tokyo right now?\"",
-            onDevice: nil,
             timestamp: Date()
         )
         self.chatMessages = [welcomeMessage]
@@ -152,8 +172,12 @@ final class MainViewModel {
     /// snapshot to the widget App-Group container.
     private func bootstrap() {
         Task { await geoPlaces.prewarm() }
+        // Precompute the Foundation Models KV cache so the first assistant turn is
+        // fast (self-guards on engine + availability; Android warms via model reuse).
+        assistant.prewarm()
         seedDefaultZonesIfEmpty()
         publishSharedZones()
+        refreshDeviceCoordinate()
     }
 
     // MARK: - Settings proxy
@@ -272,6 +296,20 @@ final class MainViewModel {
     /// Marks `id` as the residence (home) anchor and clears the flag on all others.
     func setHomeZone(id: String, displayName: String? = nil) {
         setAnchorZone(id: id, displayName: displayName, role: .residence)
+    }
+
+    /// Resolves the device's location to an IANA zone (permission-gated, on-device)
+    /// and pins it as the residence anchor. Returns the resolved display name, or
+    /// nil when the location/zone could not be read. Shared by the Now card's
+    /// "Use location" button and Settings (Android: `resolveHomeFromLocation`).
+    func resolveHomeFromLocation() async -> String? {
+        let resolver = LocationZoneResolver()
+        guard let zoneId = await resolver.resolveHomeZoneId() else { return nil }
+        let name = zoneId.split(separator: "/").last
+            .map { $0.replacingOccurrences(of: "_", with: " ") } ?? zoneId
+        setHomeZone(id: zoneId, displayName: name)
+        refreshDeviceCoordinate()
+        return name
     }
 
     /// Pins `id` to an anchor slot on the Now card (`.residence` or `.homeCountry`), replacing
@@ -627,38 +665,48 @@ final class MainViewModel {
         guard !text.isEmpty else { return }
 
         chatMessages.append(
-            ChatMessage(isUser: true, text: messageText, onDevice: nil, timestamp: Date())
+            ChatMessage(isUser: true, text: messageText, timestamp: Date())
         )
         aiLoading = true
-        defer { aiLoading = false }
+        aiPartialText = nil
+        defer {
+            aiPartialText = nil
+            aiLoading = false
+        }
 
         let homeZoneId = savedZones.first(where: { $0.isHome })?.id ?? TimeZone.current.identifier
+        let recentTurns = recentChatTurns()
         let result = await assistant.process(
             prompt: messageText,
             homeZoneId: homeZoneId,
             savedZones: savedZones,
-            people: people
+            people: people,
+            recentTurns: recentTurns,
+            onPartial: { [weak self] partial in
+                await MainActor.run { self?.aiPartialText = partial }
+            }
         )
 
         switch result {
-        case let .success(replyText, onDevice):
+        case let .success(replyText, source):
             chatMessages.append(
-                ChatMessage(isUser: false, text: replyText, onDevice: onDevice, timestamp: Date())
+                ChatMessage(isUser: false, text: replyText, source: source, timestamp: Date())
             )
-        case let .scheduled(task, onDevice):
+        case let .scheduled(task, source):
             // Propose, never auto-write — the user confirms below (§12.8).
             pendingDraft = task
             chatMessages.append(
                 ChatMessage(
                     isUser: false,
                     text: "I drafted '\(task.title)'. Review and confirm it below to add it.",
-                    onDevice: onDevice,
+                    source: source,
                     timestamp: Date()
                 )
             )
         case let .error(message):
+            // Rendered as the red error bubble (Android: sender == "System Error").
             chatMessages.append(
-                ChatMessage(isUser: false, text: message, onDevice: nil, timestamp: Date())
+                ChatMessage(isUser: false, text: message, isError: true, timestamp: Date())
             )
         }
     }
@@ -683,7 +731,6 @@ final class MainViewModel {
             ChatMessage(
                 isUser: false,
                 text: "Added '\(title)' to your plan.",
-                onDevice: nil,
                 timestamp: Date()
             )
         )
@@ -694,7 +741,7 @@ final class MainViewModel {
         guard pendingDraft != nil else { return }
         pendingDraft = nil
         chatMessages.append(
-            ChatMessage(isUser: false, text: "Discarded the draft.", onDevice: nil, timestamp: Date())
+            ChatMessage(isUser: false, text: "Discarded the draft.", timestamp: Date())
         )
     }
 
@@ -702,6 +749,39 @@ final class MainViewModel {
     func clearChat() {
         chatMessages = [welcomeMessage]
         pendingDraft = nil
+    }
+
+    /// Releases on-device model memory when the app backgrounds.
+    func releaseAiModels() {
+        assistant.releaseOnDeviceSession()
+    }
+
+    /// Pre-warms the on-device model KV cache when idle.
+    func prewarmAi() {
+        assistant.prewarm()
+    }
+
+    private func recentChatTurns() -> [ChatTurn] {
+        chatMessages
+            .filter { !$0.isError }
+            .dropLast()
+            .suffix(4)
+            .map { msg in
+                ChatTurn(
+                    role: msg.isUser ? "User" : "Assistant",
+                    text: msg.text
+                )
+            }
+    }
+
+    /// Removes the error bubble and resends the user message that preceded it.
+    func retryAiMessage(errorMessageId: UUID) {
+        guard !aiLoading else { return }
+        guard let errorIdx = chatMessages.firstIndex(where: { $0.id == errorMessageId }),
+              errorIdx > 0 else { return }
+        guard let userText = chatMessages[..<errorIdx].last(where: { $0.isUser })?.text else { return }
+        chatMessages.removeAll { $0.id == errorMessageId }
+        Task { await sendAiMessage(userText) }
     }
 
     // MARK: - Private helpers
@@ -753,7 +833,9 @@ final class MainViewModel {
     }
 
     /// Re-evaluates the Live Activity against the current task set (Android `LiveUpdates.refreshNow`).
-    private func refreshLiveActivity() {
+    /// Internal so the app shell can re-arm it on every foreground: ActivityKit can only START
+    /// an activity while the app is foregrounded, so the background refresh alone can miss one.
+    func refreshLiveActivity() {
         let entries = plannedTasks.map { (id: $0.id, title: $0.title, date: $0.timestamp) }
         let now = timeEngine.displayDate
         Task { [liveActivityManager] in

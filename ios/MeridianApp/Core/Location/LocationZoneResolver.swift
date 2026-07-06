@@ -110,10 +110,27 @@ final class LocationZoneResolver {
         }
 
         // Offline / throttled fallback: nearest known city (matches Android heuristic).
-        return Self.nearestKnownZone(
+        let nearest = Self.nearestKnownZone(
             latitude: location.coordinate.latitude,
             longitude: location.coordinate.longitude
         )
+        // The nearest known city can sit across a border (much of southern India is closer to
+        // Colombo than Kolkata). When the device's configured zone keeps the same clock as that
+        // candidate, trust the device — the location-based guess only wins when the offsets
+        // actually differ (i.e. the device zone is stale). Android parity.
+        if let nearestZone = TimeZone(identifier: nearest),
+           nearestZone.secondsFromGMT(for: .now) == TimeZone.current.secondsFromGMT(for: .now) {
+            return TimeZone.current.identifier
+        }
+        return nearest
+    }
+
+    /// Device's last-known coordinate from the system cache (no fresh fix requested), or `nil`
+    /// without authorization or a cached fix. Used to pin the home zone at the user's actual
+    /// location on the day/night map instead of the zone's representative city.
+    var lastKnownCoordinate: GeoPoint? {
+        guard hasLocationPermission, let location = manager.location else { return nil }
+        return GeoPoint(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
     }
 
     // MARK: - Location fix
@@ -122,7 +139,10 @@ final class LocationZoneResolver {
     /// ``fixTimeout``. Returns `nil` on timeout or stream error.
     private func currentLocation() async -> CLLocation? {
         await withTaskGroup(of: CLLocation?.self) { group in
-            group.addTask { @MainActor in
+            group.addTask {
+                // `firstLiveUpdate()` is `@MainActor`, so the await hops back to the main
+                // actor on its own; an explicit `@MainActor in` here trips the region-based
+                // isolation checker, so leave the child task non-isolated.
                 await self.firstLiveUpdate()
             }
             group.addTask {
@@ -190,7 +210,7 @@ final class LocationZoneResolver {
 /// away from `.notDetermined`. `@MainActor` because `CLLocationManager` delivers callbacks
 /// on the main run loop.
 @MainActor
-private final class AuthDelegate: NSObject, CLLocationManagerDelegate {
+private final class AuthDelegate: NSObject, @MainActor CLLocationManagerDelegate {
     private var onChange: ((CLAuthorizationStatus) -> Void)?
 
     init(onChange: @escaping (CLAuthorizationStatus) -> Void) {

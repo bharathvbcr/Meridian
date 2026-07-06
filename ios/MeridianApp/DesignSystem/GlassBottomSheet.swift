@@ -26,10 +26,18 @@ struct GlassBottomSheet<Content: View>: View {
     @Environment(\.glassEnabled) private var glassEnabled
     @Environment(\.glassOpacity) private var glassOpacity
     @Environment(\.reduceTransparencyOverride) private var reduceTransparency
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+
+    /// True when any source requests reduced transparency (app override or system).
+    /// Mirrors the resolution `GlassEffectModifier` performs so the sheet chrome
+    /// stays in lockstep with the canonical glass surface.
+    private var prefersReducedTransparency: Bool {
+        reduceTransparency || systemReduceTransparency
+    }
 
     private let shape = UnevenRoundedRectangle(
-        topLeadingRadius: 28, bottomLeadingRadius: 0,
-        bottomTrailingRadius: 0, topTrailingRadius: 28,
+        topLeadingRadius: MeridianRadius.large.rawValue, bottomLeadingRadius: 0,
+        bottomTrailingRadius: 0, topTrailingRadius: MeridianRadius.large.rawValue,
         style: .continuous
     )
 
@@ -37,17 +45,23 @@ struct GlassBottomSheet<Content: View>: View {
         VStack(spacing: 0) {
             // Manual drag handle (Android draws its own; iOS hides the system one).
             Capsule()
-                .fill(MeridianColors.onSurfaceVariant.opacity(0.4))
-                .frame(width: 32, height: 4)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
-                .frame(maxWidth: .infinity)
+                .fill(MeridianColors.onSurfaceVariant.opacity(GlassSheetChrome.handleFillOpacity))
+                .frame(width: GlassSheetChrome.handleWidth, height: GlassSheetChrome.handleHeight)
+                // Keep the whole handle band a >=44pt touch/hit area for the
+                // dismiss affordance without growing the visible capsule.
+                .frame(maxWidth: .infinity, minHeight: GlassSheetChrome.handleHitTarget)
+                .contentShape(Rectangle())
+                .padding(.top, MeridianSpacing.md.rawValue)
+                .accessibilityElement()
+                .accessibilityLabel("Drag handle")
+                .accessibilityHint("Swipe down to dismiss")
+                .accessibilityAddTraits(.isButton)
 
             content()
         }
         .frame(maxWidth: .infinity)
         .background {
-            if reduceTransparency {
+            if prefersReducedTransparency {
                 shape.fill(MeridianColors.surface)
             } else {
                 shape.fill(MeridianColors.surface.opacity(0.82))
@@ -58,12 +72,36 @@ struct GlassBottomSheet<Content: View>: View {
             }
         }
         .overlay {
-            shape.strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+            // Match the canonical glass rim: opaque-fallback edge is brighter
+            // (see GlassEffectModifier's 0.32 stroke), glass edge is the standard 0.2.
+            shape.strokeBorder(
+                Color.white.opacity(prefersReducedTransparency
+                                    ? GlassSheetChrome.opaqueBorderOpacity
+                                    : GlassSheetChrome.glassBorderOpacity),
+                lineWidth: 1
+            )
         }
         .clipShape(shape)
         .presentationBackground(.clear)        // let the glass chrome show; system scrim stays
         .presentationDragIndicator(.hidden)
     }
+}
+
+// MARK: - Sheet chrome tokens
+
+/// Local constants for the sheet's drag-handle geometry and glass-edge rim.
+/// The border opacities intentionally mirror `GlassEffectModifier` so sheets,
+/// cards, and nav pills share one rim-highlight material family.
+private enum GlassSheetChrome {
+    static let handleWidth: CGFloat = 32
+    static let handleHeight: CGFloat = 4
+    static let handleHitTarget: CGFloat = 44
+    /// Muted tint for the visible drag-handle capsule over the glass chrome.
+    static let handleFillOpacity: Double = 0.4
+    /// Canonical glass edge highlight (matches GlassEffectModifier's 0.2 stroke).
+    static let glassBorderOpacity: Double = 0.2
+    /// Brighter rim used when transparency is reduced (matches the ~0.32 opaque edge).
+    static let opaqueBorderOpacity: Double = 0.32
 }
 
 // MARK: - GlassFormBottomSheet
@@ -92,22 +130,22 @@ struct GlassFormBottomSheet<Title: View, Content: View, Confirm: View, Dismiss: 
         GlassBottomSheet {
             VStack(alignment: .leading, spacing: 0) {
                 title()
-                Spacer().frame(height: 8)
+                Spacer().frame(height: MeridianSpacing.sm.rawValue)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         content()
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Spacer().frame(height: 16)
-                HStack {
+                Spacer().frame(height: MeridianSpacing.lg.rawValue)
+                HStack(spacing: MeridianSpacing.md.rawValue) {
                     Spacer()
                     dismissButton()
                     confirmButton()
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
+            .padding(.horizontal, MeridianSpacing.xxl.rawValue)
+            .padding(.bottom, MeridianSpacing.lg.rawValue)
         }
     }
 }
@@ -153,14 +191,15 @@ extension View {
         MeridianColors.background.ignoresSafeArea()
     }
     .glassBottomSheet(isPresented: .constant(true)) {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.md.rawValue) {
             Text("Glass sheet")
-                .font(.system(size: 22, weight: .bold))
+                .font(.titleLarge)
                 .foregroundStyle(MeridianColors.onSurface)
             Text("Frosted chrome with rounded top corners.")
+                .font(.bodyLarge)
                 .foregroundStyle(MeridianColors.onSurfaceVariant)
         }
-        .padding(24)
+        .padding(MeridianSpacing.xxl.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
     .environment(\.glassOpacity, 0.6)

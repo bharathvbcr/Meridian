@@ -29,6 +29,10 @@ struct CelestialBackdrop: View {
     /// Backdrop glow strength as a normalized fraction (0.10…1.0).
     var intensity: Double = kDefaultBackdropIntensity
 
+    /// When Reduce Motion is on, the once-a-minute body reposition is an instant cut
+    /// rather than a glide, so the sun/moon never visibly slides across the screen.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         // Recompute the sky once a minute — fast enough to track the sun, cheap
         // enough to ignore. Matches Android's 60_000 ms cadence.
@@ -37,10 +41,17 @@ struct CelestialBackdrop: View {
                 let sky = Self.computeSky(now: context.date)
                 Self.drawSky(sky, into: gc, size: size)
             }
+            // The scene is intentionally static between ticks; the only movement is the
+            // once-a-minute reposition. Glide it with a gentle spring when motion is
+            // allowed, but leave an instant redraw when Reduce Motion is requested.
+            .animation(reduceMotion ? nil : Motion.smooth(), value: context.date)
             .allowsHitTesting(false)
         }
         .opacity(min(max(intensity, 0.0), 1.0))
         .ignoresSafeArea()
+        // Purely decorative: the day/night state it conveys is carried by the accent
+        // tokens on the cards in front of it, so keep it out of the a11y tree entirely.
+        .accessibilityHidden(true)
     }
 
     // MARK: - SkyState
@@ -120,6 +131,43 @@ struct CelestialBackdrop: View {
         )
     }
 
+    // MARK: - Backdrop palette
+
+    /// The backdrop needs a richer, multi-stop ramp than the four flat day/night
+    /// tokens, but its warm/cool *endpoints* are anchored to the shared theme colours
+    /// (`daylightAccent`/`daylightGlow`, `nightAccent`/`nightGlow`) so the sky stays in
+    /// the same hue family as the cards that sit in front of it — a brand-colour change
+    /// propagates here for free. Only the intermediate specular highlights (near-white
+    /// disc peaks) and the deep earthshine shadow are backdrop-specific constants,
+    /// because no shared token represents "the hottest point of the sun" or "the ashen
+    /// unlit face of the moon".
+    private enum Palette {
+
+        // Sun — warm endpoints derived from the daytime tokens; the low, near-horizon
+        // sun leans toward the warm glow, the high sun toward the bright accent.
+        static let sunCoreLow  = MeridianColors.daylightGlow                 // hottest low-sun tint
+        static let sunCoreHigh = Color(hex: "FFF6D8")                        // near-white noon core (specular peak)
+        static let sunWarmLow  = Color.lerp(MeridianColors.daylightGlow,
+                                            MeridianColors.error, 0.30)      // deep sunset red-orange
+        static let sunWarmHigh = MeridianColors.daylightAccent              // bright high-sun gold
+
+        // Moon — cool endpoints anchored to the night tokens.
+        static let moonGlow    = MeridianColors.nightAccent                  // cool moonlight halo/glow
+        static let moonDiscHi  = Color(hex: "FDFEFF")                        // specular disc highlight
+        static let moonDiscMid = Color.lerp(MeridianColors.nightAccent,
+                                            Color.white, 0.72)              // lit-face midtone
+        static let moonDiscLo  = Color.lerp(MeridianColors.nightAccent,
+                                            MeridianColors.nightGlow, 0.45) // shaded lit-limb toward the glow hue
+        static let moonMaria   = Color.lerp(MeridianColors.nightAccent,
+                                            MeridianColors.nightGlow, 0.30) // faint maria mottling
+        static let moonShadow  = Color.lerp(MeridianColors.nightGlow,
+                                            MeridianColors.background, 0.55) // deep ashen earthshine
+
+        // Stars — a pale tint of the night accent so they read as the same cool family.
+        static let star        = Color.lerp(MeridianColors.nightAccent,
+                                            Color.white, 0.60)
+    }
+
     // MARK: - Drawing
 
     private static func drawSky(_ sky: SkyState, into gc: GraphicsContext, size: CGSize) {
@@ -150,9 +198,10 @@ struct CelestialBackdrop: View {
         sky: SkyState, pulse: Double, alpha: Double, into gc: GraphicsContext
     ) {
         let center = CGPoint(x: cx, y: cy)
-        // Warm low sun → bright high sun.
-        let core = lerpColor(Color(hex: "FF7B3D"), Color(hex: "FFF6D8"), sky.altitude)
-        let warm = lerpColor(Color(hex: "FF5E3A"), Color(hex: "FFD66B"), sky.altitude)
+        // Warm low sun → bright high sun. Endpoints are anchored to the daytime tokens
+        // (see `Palette`) so the sun stays in the cards' hue family.
+        let core = lerpColor(Palette.sunCoreLow, Palette.sunCoreHigh, sky.altitude)
+        let warm = lerpColor(Palette.sunWarmLow, Palette.sunWarmHigh, sky.altitude)
 
         // The big atmospheric glow.
         let glowRadius = max(w, h) * (0.85 + 0.10 * pulse)
@@ -226,7 +275,8 @@ struct CelestialBackdrop: View {
         sky: SkyState, pulse: Double, alpha: Double, into gc: GraphicsContext
     ) {
         let center = CGPoint(x: cx, y: cy)
-        let cool = Color(hex: "C9D8FF")
+        // Cool moonlight halo/glow, anchored to the night accent token.
+        let cool = Palette.moonGlow
 
         // Cool moonlight glow.
         let glowRadius = max(w, h) * (0.5 + 0.06 * pulse)
@@ -259,9 +309,9 @@ struct CelestialBackdrop: View {
         // Lit disc, lightly shaded toward the lower-right for a spherical feel.
         let discCenter = CGPoint(x: cx - r * 0.25, y: cy - r * 0.25)
         let discGradient = Gradient(stops: [
-            .init(color: Color(hex: "FDFEFF").opacity(alpha), location: 0.0),
-            .init(color: Color(hex: "E6ECFB").opacity(alpha), location: 0.7),
-            .init(color: Color(hex: "B7C4E0").opacity(alpha), location: 1.0),
+            .init(color: Palette.moonDiscHi.opacity(alpha), location: 0.0),
+            .init(color: Palette.moonDiscMid.opacity(alpha), location: 0.7),
+            .init(color: Palette.moonDiscLo.opacity(alpha), location: 1.0),
         ])
         gc.fill(
             circlePath(center: center, radius: r),
@@ -270,7 +320,7 @@ struct CelestialBackdrop: View {
         )
 
         // A couple of subtle maria so the disc doesn't read as a flat dot.
-        let maria = Color(hex: "9FB0D0")
+        let maria = Palette.moonMaria
         gc.fill(
             circlePath(center: CGPoint(x: cx - r * 0.30, y: cy - r * 0.18), radius: r * 0.20),
             with: .color(maria.opacity(0.30 * alpha))
@@ -288,7 +338,7 @@ struct CelestialBackdrop: View {
         // black hole, so even a near-new moon still reads as a moon.
         let shadow = buildMoonShadow(cx: cx, cy: cy, r: r,
                                      c: sky.moonTerminator, waxing: sky.moonWaxing)
-        gc.fill(shadow, with: .color(Color(hex: "2A3658").opacity(0.82 * alpha)))
+        gc.fill(shadow, with: .color(Palette.moonShadow.opacity(0.82 * alpha)))
 
         // A faint rim so the full disc is always defined, whatever the phase.
         gc.stroke(
@@ -348,7 +398,7 @@ struct CelestialBackdrop: View {
             let radius = baseR * (0.7 + 0.5 * t)
             gc.fill(
                 circlePath(center: CGPoint(x: sx, y: sy), radius: radius),
-                with: .color(Color(hex: "EAF1FF").opacity(a))
+                with: .color(Palette.star.opacity(a))
             )
         }
     }

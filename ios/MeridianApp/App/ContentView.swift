@@ -40,9 +40,6 @@ struct ContentView: View {
     @State private var barCollapsed: Bool = false
     @State private var lastScrollOffset: CGFloat = 0
 
-    /// The presentation order of the tabs — AI deliberately in the center slot.
-    private static let tabOrder: [MeridianTab] = [.now, .world, .ai, .plan, .settings]
-
     /// The accessory pill is suppressed on the scroll-heavy / full-bleed tabs and while scrubbing,
     /// matching Android (`currentRoute !in {world, plan, ai} && scrubInstant == null`).
     private var accessoryEnabled: Bool {
@@ -50,15 +47,14 @@ struct ContentView: View {
             && TimeEngine.shared.scrubInstant == nil
     }
 
+    private var tabBarHeight: CGFloat { barCollapsed ? 72 : 96 }
+
     // MARK: Body
 
     var body: some View {
         ZStack {
-            // The gradient + celestial backdrop, captured behind one glass container so all
-            // glass elements refract the same source layer.
             backdrop
 
-            // VERIFY: GlassEffectContainer — iOS 26+ Liquid Glass grouping container; current on iOS 27.
             GlassEffectContainer {
                 if isRegular {
                     regularLayout
@@ -75,7 +71,6 @@ struct ContentView: View {
     @ViewBuilder
     private var backdrop: some View {
         ZStack {
-            // Vertical surface→background gradient (Android `Brush.verticalGradient`).
             LinearGradient(
                 colors: [MeridianColors.surface, MeridianColors.background],
                 startPoint: .top,
@@ -96,38 +91,43 @@ struct ContentView: View {
     private var compactLayout: some View {
         screenForTab(selectedTab)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Inset content above the floating pill so it is never occluded (§4 safeAreaInset).
+            .id(selectedTab)
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: barCollapsed ? 72 : 96)
+                Color.clear.frame(height: tabBarHeight)
             }
-            // The "next event" accessory sits above the bar on the same glass layer.
             .overlay(alignment: .bottom) {
-                BottomAccessoryPill(
+                BottomAccessory(
                     tasks: viewModel.plannedTasks,
-                    enabled: accessoryEnabled
+                    tab: selectedTab,
+                    enabled: accessoryEnabled,
+                    embedded: true,
+                    onTap: {
+                        withAnimation(Motion.snappy()) { selectedTab = .plan }
+                    }
                 )
-                .padding(.bottom, (barCollapsed ? 72 : 96) + 8)
+                .padding(.bottom, tabBarHeight + 8)
                 .padding(.horizontal, 24)
             }
-            // The floating glass tab bar, AI center-prominent.
             .overlay(alignment: .bottom) {
-                MeridianTabBar(
-                    tabs: Self.tabOrder,
+                GlassCompactNavBar(
                     selectedTab: $selectedTab,
                     collapsed: barCollapsed
                 )
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            // Observe scroll to drive minimize-on-scroll. The preference action is delivered on
-            // the main actor; `assumeIsolated` lets us mutate `@State` from the (Sendable) closure
-            // under Swift 6 strict concurrency. Screens publish `ScrollOffsetKey` from their lists;
-            // when none is published this is simply never invoked and the bar stays expanded.
             .onPreferenceChange(ScrollOffsetKey.self) { offset in
                 MainActor.assumeIsolated {
                     updateBarCollapse(forOffset: offset)
                 }
             }
+            .onChange(of: selectedTab) { _, _ in
+                barCollapsed = false
+                lastScrollOffset = 0
+            }
+            .environment(\.tabBarInsetHeight, tabBarHeight)
+            .animation(Motion.smooth(), value: selectedTab)
     }
 
     /// Collapses the bar when content scrolls down (offset decreasing) and expands it on scroll up,
@@ -137,9 +137,9 @@ struct ContentView: View {
         let delta = offset - lastScrollOffset
         lastScrollOffset = offset
         if delta < -3, !barCollapsed {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { barCollapsed = true }
+            withAnimation(Motion.snappy()) { barCollapsed = true }
         } else if delta > 3, barCollapsed {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { barCollapsed = false }
+            withAnimation(Motion.snappy()) { barCollapsed = false }
         }
     }
 
@@ -151,8 +151,24 @@ struct ContentView: View {
 
             screenForTab(selectedTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(selectedTab)
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .overlay(alignment: .bottom) {
+                    BottomAccessory(
+                        tasks: viewModel.plannedTasks,
+                        tab: selectedTab,
+                        enabled: accessoryEnabled,
+                        embedded: true,
+                        onTap: {
+                            withAnimation(Motion.snappy()) { selectedTab = .plan }
+                        }
+                    )
+                    .padding(.bottom, 20)
+                    .padding(.horizontal, 32)
+                }
         }
         .ignoresSafeArea(edges: [.top, .bottom])
+        .animation(Motion.smooth(), value: selectedTab)
     }
 
     // MARK: - Tab routing
@@ -169,173 +185,6 @@ struct ContentView: View {
     }
 }
 
-// MARK: - ScrollOffsetKey
-
-/// Preference key screens emit (via a background `GeometryReader`) to report their scroll offset,
-/// so the shell can collapse / expand the floating bar. Screens already in the project drive their
-/// own scrolling; those that opt in publish this key. Absent the key, the bar simply never collapses.
-struct ScrollOffsetKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-// MARK: - MeridianTabBar (compact — floating pill, AI center-prominent)
-
-/// Floating glass pill that honours the explicit `now / world / ai / plan / settings` order and
-/// renders the AI slot as a raised, accented launcher (Android `GlassNavBar` + `AiNavButton`).
-/// Collapses to icon-only when `collapsed` (minimize-on-scroll).
-private struct MeridianTabBar: View {
-    let tabs: [MeridianTab]
-    @Binding var selectedTab: MeridianTab
-    var collapsed: Bool
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(tabs) { tab in
-                if tab == .ai {
-                    AiTabButton(isActive: selectedTab == .ai) { select(.ai) }
-                } else {
-                    TabItem(
-                        tab: tab,
-                        isActive: selectedTab == tab,
-                        showLabel: !collapsed
-                    ) { select(tab) }
-                }
-            }
-        }
-        .padding(.horizontal, collapsed ? 8 : 12)
-        .padding(.vertical, 8)
-        .glassEffect(.regular, in: Capsule())   // VERIFY: glassEffect(_:in:) iOS 26+, current iOS 27.
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: collapsed)
-    }
-
-    private func select(_ tab: MeridianTab) {
-        guard selectedTab != tab else { return }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selectedTab = tab }
-    }
-}
-
-// MARK: - TabItem
-
-private struct TabItem: View {
-    let tab: MeridianTab
-    let isActive: Bool
-    let showLabel: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: isActive ? tab.activeIcon : tab.icon)
-                    .font(.system(size: 18, weight: isActive ? .semibold : .regular))
-                    .symbolRenderingMode(.hierarchical)
-
-                if isActive && showLabel {
-                    Text(tab.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .fixedSize()
-                        .transition(.opacity.combined(with: .move(edge: .leading)))
-                }
-            }
-            .foregroundStyle(isActive ? MeridianColors.onPrimary : MeridianColors.onSurfaceVariant)
-            .padding(.horizontal, isActive && showLabel ? 14 : 12)
-            .padding(.vertical, 10)
-            .background {
-                if isActive {
-                    Capsule().fill(MeridianColors.primary)
-                }
-            }
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: isActive)
-        .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
-        .accessibilityLabel("\(tab.title) tab")
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isActive)
-    }
-}
-
-// MARK: - AiTabButton (center-prominent launcher)
-
-private struct AiTabButton: View {
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 20, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(isActive ? MeridianColors.onPrimary : MeridianColors.primary)
-                .frame(width: 48, height: 48)
-                .background {
-                    Circle()
-                        .fill(isActive ? MeridianColors.primary : MeridianColors.primary.opacity(0.16))
-                }
-                .overlay {
-                    Circle().strokeBorder(MeridianColors.primary.opacity(0.5), lineWidth: 1)
-                }
-                .scaleEffect(isActive ? 1.06 : 1.0)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .sensoryFeedback(.impact(weight: .light), trigger: isActive)
-        .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
-        .accessibilityLabel("AI Assistant tab")
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isActive)
-    }
-}
-
-// MARK: - BottomAccessoryPill
-
-/// "Now playing"-style slim strip surfacing the next upcoming event with a live countdown.
-/// Materializes only when the next event is within one hour (Android `BottomAccessory` +
-/// `Reminders.ACCESSORY_WINDOW_MILLIS`). The countdown uses the shared `CountdownFormatter` so it
-/// reads identically to the Live Activity.
-private struct BottomAccessoryPill: View {
-    let tasks: [PlannedTask]
-    var enabled: Bool
-
-    var body: some View {
-        // Tick once a second so the countdown stays fresh (Android `LaunchedEffect { delay(1000) }`).
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = context.date
-            let next = tasks
-                .filter { $0.timestamp > now }
-                .min { $0.timestamp < $1.timestamp }
-            let remaining = next.map { $0.timestamp.timeIntervalSince(now) }
-            let withinWindow = (remaining ?? .infinity) < CountdownFormatter.accessoryWindow
-
-            if enabled, let task = next, withinWindow {
-                HStack(spacing: 8) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(MeridianColors.primary)
-
-                    Text(task.title)
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(MeridianColors.onSurface)
-                        .lineLimit(1)
-
-                    Text("in \(CountdownFormatter.countdown(to: task.timestamp, now: now))")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color(hex: "#FF6B6B"))
-                        .monospacedDigit()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .glassEffect(.regular, in: Capsule())   // VERIFY: glassEffect iOS 26+, current iOS 27.
-                .overlay(Capsule().strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1))
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: enabled)
-    }
-}
 // MARK: - Preview
 
 #if DEBUG
@@ -345,14 +194,12 @@ private struct BottomAccessoryPill: View {
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
     let settingsRepo = SettingsRepository()
-
-    @Previewable @State var viewModel = MainViewModel(
+    let viewModel = MainViewModel(
         modelContext: container.mainContext,
         settingsRepo: settingsRepo
     )
-    @Previewable @State var tab: MeridianTab = .now
 
-    return ContentView(viewModel: viewModel, selectedTab: $tab)
+    return ContentView(viewModel: viewModel, selectedTab: .constant(.now))
         .modelContainer(container)
         .environment(settingsRepo)
         .environment(TimeEngine.shared)

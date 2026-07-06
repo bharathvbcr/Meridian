@@ -28,6 +28,9 @@ struct JumpModal: View {
     @State private var results: [ZoneMatch] = []
     @State private var zoneQuery = ""
     @State private var searchTask: Task<Void, Never>? = nil
+    /// True while a debounced zone search is in flight — drives the pending spinner
+    /// and keeps the "no matches" row from flashing before results settle.
+    @State private var isSearching = false
 
     init(
         localZoneId: String,
@@ -102,6 +105,38 @@ struct JumpModal: View {
         return "\(date) · \(time) (\(localLocationName))"
     }
 
+    /// A spoken, non-symbolic description of `localEquivalent` for VoiceOver
+    /// (the visual version leads with "=" and "·", which read poorly aloud).
+    private var localEquivalentAccessibility: String? {
+        guard let instant = targetInstant, selectedZoneId != localZoneId else { return nil }
+        let date = TimeFormats.shortDate(date: instant, timeZoneId: localZoneId)
+        let time = TimeFormats.hourMinute(
+            date: instant, timeZone: TimeFormats.safeTimeZone(id: localZoneId), use24Hour: use24Hour
+        )
+        return "In your local time: \(date), \(time) in \(localLocationName)"
+    }
+
+    /// A spoken description of `offsetDifference` ("9 hours ahead of you") — clearer
+    /// than the visual "+9h" for VoiceOver users.
+    private var offsetDifferenceAccessibility: String {
+        let now = Date()
+        let target = TimeFormats.offsetSeconds(for: selectedZoneId, at: now)
+        let local = TimeFormats.offsetSeconds(for: localZoneId, at: now)
+        let diffHours = Double(target - local) / 3600.0
+        if diffHours == 0 { return "Same time as you" }
+        let absHours = abs(diffHours)
+        let hourStr = absHours.truncatingRemainder(dividingBy: 1) == 0
+            ? String(Int(absHours)) : String(absHours)
+        let unit = absHours == 1 ? "hour" : "hours"
+        let direction = diffHours > 0 ? "ahead of you" : "behind you"
+        return "\(hourStr) \(unit) \(direction)"
+    }
+
+    /// True once a query has been entered and the search has settled with no matches.
+    private var showsNoMatches: Bool {
+        !zoneQuery.trimmingCharacters(in: .whitespaces).isEmpty && !isSearching && results.isEmpty
+    }
+
     private var quickZones: [(id: String, label: String)] {
         var out: [(String, String)] = [(localZoneId, localLocationName)]
         for zone in savedZones where zone.id != localZoneId {
@@ -126,23 +161,46 @@ struct JumpModal: View {
                             ?? TimeFormats.safeTimeZone(id: id).identifier
                     }
 
-                    TextField("Search another city or zone", text: $zoneQuery)
-                        .textInputAutocapitalization(.words)
-                        .onChange(of: zoneQuery) { _, query in runSearch(query) }
+                    HStack(spacing: MeridianSpacing.sm.rawValue) {
+                        TextField("Search another city or zone", text: $zoneQuery)
+                            .textInputAutocapitalization(.words)
+                            .onChange(of: zoneQuery) { _, query in runSearch(query) }
+                        if isSearching {
+                            ProgressView()
+                                .tint(MeridianColors.primary)
+                                .accessibilityLabel("Searching")
+                        }
+                    }
                     ForEach(results.prefix(4)) { zone in
                         Button {
+                            searchTask?.cancel()
+                            isSearching = false
                             selectedZoneId = zone.zoneId
                             selectedZoneLabel = zone.displayName
                             zoneQuery = ""
                             results = []
                         } label: {
-                            VStack(alignment: .leading) {
-                                Text(zone.displayName).fontWeight(.semibold)
+                            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
+                                Text(zone.displayName)
+                                    .font(.titleMedium)
+                                    .foregroundStyle(MeridianColors.onSurface)
                                 Text(zone.zoneId)
                                     .font(.bodyMedium)
                                     .foregroundStyle(MeridianColors.onSurfaceVariant)
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityHint("Selects this zone")
+                    }
+                    if showsNoMatches {
+                        Text("No matching cities")
+                            .font(.bodyMedium)
+                            .foregroundStyle(MeridianColors.onSurfaceVariant)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .accessibilityLabel("No matching cities found")
                     }
                 }
 
@@ -164,9 +222,12 @@ struct JumpModal: View {
                         Label("= \(localEquivalent)", systemImage: "clock")
                             .font(.bodyMedium)
                             .foregroundStyle(MeridianColors.onSurface)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(localEquivalentAccessibility ?? localEquivalent)
                     }
                 }
             }
+            .sensoryFeedback(.selection, trigger: selectedZoneId)
             .navigationTitle("Jump to Place & Time")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -186,8 +247,8 @@ struct JumpModal: View {
     }
 
     private var placeCard: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .top, spacing: MeridianSpacing.md.rawValue) {
+            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
                 Text(displayName)
                     .font(.titleMedium)
                     .fontWeight(.bold)
@@ -200,11 +261,12 @@ struct JumpModal: View {
                         .font(.labelMedium)
                         .fontWeight(.semibold)
                         .foregroundStyle(MeridianColors.primary)
+                        .accessibilityLabel(offsetDifferenceAccessibility)
                 }
             }
-            Spacer()
+            Spacer(minLength: MeridianSpacing.sm.rawValue)
             if let instant = targetInstant {
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: MeridianSpacing.xs.rawValue) {
                     Text(
                         TimeFormats.hourMinute(
                             date: instant,
@@ -221,18 +283,25 @@ struct JumpModal: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func runSearch(_ query: String) {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { results = []; return }
+        guard !trimmed.isEmpty else {
+            results = []
+            isSearching = false
+            return
+        }
+        isSearching = true
         searchTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(120)) // debounce
             guard !Task.isCancelled else { return }
             let hits = await searchZones(trimmed)
             guard !Task.isCancelled else { return }
             results = hits
+            isSearching = false
         }
     }
 }

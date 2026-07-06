@@ -115,6 +115,12 @@ struct TimelineScrubber: View {
     /// When `true`, the dial readout uses 24-hour time. Defaults to 12-hour (matching Android `is24Hour = false`).
     var is24Hour: Bool = false
 
+    // MARK: - Environment
+
+    /// Gates every non-essential animation (expand/collapse morph, press-scale, glide) so
+    /// users who ask for Reduce Motion get a fade / instant path instead of springs.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // MARK: - Live dial state (offset in minutes, mirroring the Android `slider`)
 
     /// Continuous dial offset in minutes (−720…720). Updated live while dragging; animated
@@ -169,10 +175,10 @@ struct TimelineScrubber: View {
         ZStack {
             if expanded {
                 dialCard
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .transition(Motion.scrubberContentTransition(reduceMotion: reduceMotion))
             } else {
                 collapsedPill
-                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+                    .transition(Motion.scrubberContentTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity)
@@ -183,7 +189,8 @@ struct TimelineScrubber: View {
                     .onChange(of: proxy.size.width) { _, w in controlWidth = w }
             }
         )
-        .animation(Motion.snappy(), value: expanded)
+        // Purpose-built size-morph spring (never overshoots), collapsed to instant under Reduce Motion.
+        .animation(Motion.scrubberExpandCollapse(expanding: expanded, reduceMotion: reduceMotion), value: expanded)
         // Single press+drag gesture spanning the whole control, mirroring Android's
         // `detectScrubberPressDrag`: a press expands the pill; the same finger then drags.
         .gesture(pressDragGesture)
@@ -201,7 +208,7 @@ struct TimelineScrubber: View {
         // External reset: parent cleared the offset → glide the dial home (unless a finger is down).
         .onChange(of: offsetSeconds) { _, newValue in
             if newValue == 0, !dialPressed, abs(sliderMinutes) > 0.001 {
-                withAnimation(.easeInOut(duration: 0.36)) {
+                withAnimation(Motion.reducedOrInstant(Motion.smooth(), reduceMotion: reduceMotion)) {
                     sliderMinutes = 0
                 }
             }
@@ -215,7 +222,7 @@ struct TimelineScrubber: View {
                 return // cancelled by a newer interaction
             }
             if !dialPressed {
-                withAnimation(Motion.snappy()) { expanded = false }
+                withAnimation(Motion.scrubberExpandCollapse(expanding: false, reduceMotion: reduceMotion)) { expanded = false }
             }
         }
         .onAppear {
@@ -236,67 +243,83 @@ struct TimelineScrubber: View {
                     .foregroundStyle(primary)
             }
             .frame(width: 28, height: 28)
+            .accessibilityHidden(true)
 
-            Spacer().frame(width: 10)
+            Spacer().frame(width: MeridianSpacing.md.rawValue)
 
             Text(offsetLabel(totalMinutes: liveOffsetMinutes))
                 .font(.system(size: 15, weight: .heavy, design: .rounded))
                 .foregroundStyle(liveOffsetMinutes == 0 ? onSurface : primary)
                 .contentTransition(.numericText())
-                .animation(Motion.quick(), value: liveOffsetMinutes)
+                .animation(Motion.reduced(Motion.quick(), reduceMotion: reduceMotion), value: liveOffsetMinutes)
 
             if !scrubbed {
-                Spacer().frame(width: 6)
+                Spacer().frame(width: MeridianSpacing.xs.rawValue)
                 Image(systemName: "chevron.up")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(onSurface.opacity(0.5))
+                    .accessibilityHidden(true)
             } else {
                 // One-tap reset right on the pill — no need to expand.
-                Spacer().frame(width: 8)
+                Spacer().frame(width: MeridianSpacing.sm.rawValue)
                 Button {
                     goToStep(0)
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(primary)
-                        .padding(4)
+                        .frame(width: 28, height: 28)
                         .background(Circle().fill(primary.opacity(0.15)))
+                        // 44-pt hit target without inflating the compact pill's height.
+                        .frame(width: 44, height: 44)
+                        .padding(.vertical, -8)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Reset to live")
+                .accessibilityHint("Returns the scrubber to the live time")
             }
         }
         .padding(.horizontal, ScrubberPillDefaults.horizontalPadding)
         .padding(.vertical, ScrubberPillDefaults.verticalPadding)
         .frame(minWidth: ScrubberPillDefaults.minWidth, minHeight: ScrubberPillDefaults.minHeight)
-        .liquidGlass(cornerRadius: 20, tint: primary)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue, tint: primary)
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
                 .strokeBorder(primary.opacity(0.4), lineWidth: 1)
         )
         .scaleEffect(dialPressed ? 0.94 : 1)
-        .animation(Motion.bouncy(), value: dialPressed)
-        .accessibilityLabel("Open time dial")
-        .accessibilityValue(offsetLabel(totalMinutes: liveOffsetMinutes))
+        .animation(Motion.reduced(Motion.bouncy(), reduceMotion: reduceMotion), value: dialPressed)
+        // Group the chip/label/affordance into a single control and make it adjustable so
+        // VoiceOver users can scrub the offset without performing the press-drag gesture.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Time scrubber")
+        .accessibilityValue(accessibilityReadout)
+        .accessibilityHint("Swipe up or down to adjust the time offset")
+        .accessibilityAdjustableAction(handleAccessibilityAdjust)
+        .accessibilityAction(named: Text("Reset to live")) { goToStep(0) }
     }
 
     // MARK: - Expanded dial card
 
     private var dialCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Interactive Virtual Time Dial")
-                        .font(.system(size: 17, weight: .heavy, design: .rounded))
-                        .foregroundStyle(onSurface)
+        VStack(alignment: .leading, spacing: MeridianSpacing.xl.rawValue) {
+            // Header — the live readout is the focal point; the title sits above it as a quiet label.
+            HStack(alignment: .firstTextBaseline, spacing: MeridianSpacing.sm.rawValue) {
+                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
+                    Text("Time dial")
+                        .font(.titleMedium)
+                        .foregroundStyle(onSurface.opacity(0.6))
+                        .accessibilityHidden(true)
 
                     Text(readoutText)
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(onSurface.opacity(0.9))
+                        .font(.headlineMedium)
+                        .foregroundStyle(onSurface)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .contentTransition(.numericText())
-                        .animation(Motion.quick(), value: liveOffsetMinutes)
+                        .animation(Motion.reduced(Motion.quick(), reduceMotion: reduceMotion), value: liveOffsetMinutes)
+                        .accessibilityHidden(true)
                 }
 
                 Spacer(minLength: 0)
@@ -308,48 +331,64 @@ struct TimelineScrubber: View {
                         Image(systemName: "arrow.counterclockwise")
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(primary)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(primary.opacity(0.1)))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Circle())
+                            .background(
+                                Circle()
+                                    .fill(primary.opacity(0.1))
+                                    .frame(width: 36, height: 36)
+                            )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Reset time scrubber to live")
+                    .accessibilityLabel("Reset to live")
+                    .accessibilityHint("Returns the scrubber to the live time")
                 }
             }
 
-            Spacer().frame(height: 20)
-
-            // Draggable physical dial canvas
+            // Draggable physical dial. The Canvas drawing itself is decorative (hidden), while
+            // the containing region carries the semantic value + adjustable action so VoiceOver
+            // can scrub without the press-drag gesture and never lands on an unlabeled canvas.
             dialCanvas
+                .accessibilityHidden(true)
                 .frame(height: ScrubberConstants.dialHeight)
                 .frame(maxWidth: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                         .fill(onSurface.opacity(0.06))
                 )
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Time offset")
+                .accessibilityValue(accessibilityReadout)
+                .accessibilityHint("Swipe up or down to adjust the time offset")
+                .accessibilityAdjustableAction(handleAccessibilityAdjust)
 
-            Spacer().frame(height: 10)
-
-            HStack {
+            HStack(spacing: MeridianSpacing.sm.rawValue) {
                 Text("-12 hrs")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.labelMedium)
                     .foregroundStyle(onSurface.opacity(0.7))
-                Spacer()
-                Text("Hold & drag to scrub · flick fast to jump hours")
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    .foregroundStyle(primary)
-                Spacer()
-                Text("+12 hrs")
+                Spacer(minLength: 0)
+                Text("Hold & drag to scrub · flick to jump hours")
                     .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(onSurface.opacity(0.55))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+                Text("+12 hrs")
+                    .font(.labelMedium)
                     .foregroundStyle(onSurface.opacity(0.7))
             }
+            .accessibilityHidden(true)
         }
-        .padding(20)
+        .padding(MeridianSpacing.xl.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .liquidGlass(cornerRadius: 20, tint: primary)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue, tint: primary)
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
                 .strokeBorder(primary.opacity(0.5), lineWidth: 1.5)
         )
+        // Group the card so VoiceOver reads it as one region containing the adjustable dial
+        // element and the reset button, rather than stopping on decorative sub-views.
+        .accessibilityElement(children: .contain)
     }
 
     private var readoutText: String {
@@ -365,6 +404,47 @@ struct TimelineScrubber: View {
             .month(.abbreviated)
             .day(.defaultDigits)
         return "\(date.formatted(timeStyle)) · \(date.formatted(dayStyle))"
+    }
+
+    /// Spoken value for VoiceOver — a plain-language offset plus the resulting time, so the
+    /// control announces both "how far from live" and "what time that is" on every adjustment.
+    private var accessibilityReadout: String {
+        let off = liveOffsetMinutes
+        guard off != 0 else { return "Live, synced with the current time" }
+        let direction = off > 0 ? "ahead of" : "behind"
+        // Sign-free spoken magnitude, e.g. "3 hours 15 minutes".
+        let absValue = abs(off)
+        let hours = absValue / 60
+        let minutes = absValue % 60
+        var magnitude = ""
+        if hours > 0 { magnitude += "\(hours) hour\(hours == 1 ? "" : "s")" }
+        if minutes > 0 {
+            if !magnitude.isEmpty { magnitude += " " }
+            magnitude += "\(minutes) minute\(minutes == 1 ? "" : "s")"
+        }
+        let date = Date().addingTimeInterval(TimeInterval(off * 60))
+        let timeStyle: Date.FormatStyle = is24Hour
+            ? Date.FormatStyle().hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
+            : Date.FormatStyle().hour(.defaultDigits(amPM: .abbreviated)).minute(.twoDigits)
+        return "\(magnitude) \(direction) live, \(date.formatted(timeStyle))"
+    }
+
+    /// VoiceOver adjustable handler: steps the offset by the fine grid per increment / decrement
+    /// and voices the new value (the control's `.accessibilityValue` is re-read automatically).
+    private func handleAccessibilityAdjust(_ direction: AccessibilityAdjustmentDirection) {
+        // Step from the currently-displayed (snapped) value so increments land exactly on the grid.
+        let step = ScrubberConstants.stepMinutes
+        let delta = direction == .increment ? step : -step
+        let target = CGFloat(liveOffsetMinutes + delta)
+        let clamped = min(
+            max(target, ScrubberConstants.minOffsetMinutes),
+            ScrubberConstants.maxOffsetMinutes
+        )
+        bumpInteraction()
+        withAnimation(Motion.reducedOrInstant(Motion.quick(), reduceMotion: reduceMotion)) {
+            sliderMinutes = clamped
+        }
+        detentTick &+= 1
     }
 
     // MARK: - Dial Canvas
@@ -477,7 +557,7 @@ struct TimelineScrubber: View {
                     // Press start (mirrors Android onPressStart).
                     wasExpandedAtStart = expanded
                     if !expanded {
-                        withAnimation(Motion.snappy()) { expanded = true }
+                        withAnimation(Motion.scrubberExpandCollapse(expanding: true, reduceMotion: reduceMotion)) { expanded = true }
                     }
                     dialPressed = true
                     velocitySamples = [(t: now, x: 0)]
@@ -524,7 +604,7 @@ struct TimelineScrubber: View {
                     let unitF = CGFloat(unit)
                     let snapped = (sliderMinutes / unitF).rounded() * unitF
                     let clamped = min(max(snapped, ScrubberConstants.minOffsetMinutes), ScrubberConstants.maxOffsetMinutes)
-                    withAnimation(Motion.snappy()) {
+                    withAnimation(Motion.reducedOrInstant(Motion.snappy(), reduceMotion: reduceMotion)) {
                         sliderMinutes = clamped
                     }
                 } else if wasExpandedAtStart {
@@ -547,7 +627,7 @@ struct TimelineScrubber: View {
         let clamped = min(max(step, -ScrubberConstants.totalSteps), ScrubberConstants.totalSteps)
         let target = CGFloat(clamped * 15)
         bumpInteraction()
-        withAnimation(.easeInOut(duration: 0.38)) {
+        withAnimation(Motion.reducedOrInstant(Motion.smooth(), reduceMotion: reduceMotion)) {
             sliderMinutes = target
         }
         // Fire one detent on arrival.

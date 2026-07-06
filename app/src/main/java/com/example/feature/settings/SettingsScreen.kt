@@ -14,12 +14,14 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +37,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,6 +47,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -92,6 +96,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,6 +104,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -106,8 +112,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.VisualTransformation
@@ -122,17 +131,20 @@ import com.example.core.data.MAX_GLASS_OPACITY
 import com.example.core.data.MIN_GLASS_OPACITY
 import com.example.core.data.MAX_BACKDROP_INTENSITY
 import com.example.core.data.MIN_BACKDROP_INTENSITY
+import com.example.core.ai.AiEngine
 import com.example.core.data.MeridianSettings
 import com.example.core.data.SavedZone
 import com.example.core.data.ZoneAnchorRole
 import com.example.core.data.homeCountryZone
 import com.example.core.data.residenceZone
 import com.example.core.interop.InteropClient
+import com.example.core.designsystem.CardHeader
 import com.example.core.designsystem.GlassBottomSheet
 import com.example.core.designsystem.GlassCard
 import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.HomeCityPickerSheet
 import com.example.core.designsystem.HourStepperRow
+import com.example.core.designsystem.LocalReduceMotion
 import com.example.core.designsystem.MeridianFilterChip
 import com.example.core.designsystem.MeridianWordmark
 import com.example.core.designsystem.Motion
@@ -141,8 +153,11 @@ import com.example.core.designsystem.SectionHeader
 import com.example.core.designsystem.SettingsCard
 import com.example.core.designsystem.meridianFilterChipColors
 import com.example.core.designsystem.ExpressiveShapes
+import com.example.core.designsystem.LocalTabBarInsetHeight
+import com.example.core.designsystem.reportBarScroll
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private enum class SettingsSection(
     val pillLabel: String,
@@ -182,6 +197,10 @@ private fun settingsSectionSummary(
     SettingsSection.ABOUT -> "Privacy · support · v${BuildConfig.VERSION_NAME}"
 }
 
+/** LazyColumn index for a settings section card (after header, companion, quick-nav). */
+private fun settingsSectionLazyIndex(section: SettingsSection): Int =
+    3 + SettingsSection.entries.indexOf(section)
+
 @Composable
 fun SettingsScreen(
     viewModel: MainViewModel,
@@ -193,6 +212,8 @@ fun SettingsScreen(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val haptics = LocalHapticFeedback.current
     val listState = rememberLazyListState()
+    val tabBarInset = LocalTabBarInsetHeight.current
+    val scope = rememberCoroutineScope()
 
     var focusedSection by remember { mutableStateOf<SettingsSection?>(null) }
     var expandedSections by remember { mutableStateOf(setOf<SettingsSection>()) }
@@ -204,8 +225,14 @@ fun SettingsScreen(
     }
 
     LaunchedEffect(focusedSection) {
-        if (focusedSection != null) {
-            listState.animateScrollToItem(1)
+        focusedSection?.let { section ->
+            listState.animateScrollToItem(settingsSectionLazyIndex(section))
+        }
+    }
+
+    fun scrollToSection(section: SettingsSection) {
+        scope.launch {
+            listState.animateScrollToItem(settingsSectionLazyIndex(section))
         }
     }
 
@@ -214,9 +241,16 @@ fun SettingsScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .reportBarScroll()
     ) {
         item(key = "settings-header") {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    // Wordmark + title + tagline read as one heading node so TalkBack lands on the
+                    // screen title in a single swipe instead of three.
+                    .semantics(mergeDescendants = true) { heading() },
+            ) {
                 MeridianWordmark(modifier = Modifier.padding(bottom = 12.dp))
                 Text(
                     text = "Settings",
@@ -227,7 +261,8 @@ fun SettingsScreen(
                 Text(
                     text = "Configure Meridian's engine, surfaces, and integrations.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = onSurface.copy(alpha = 0.6f)
+                    color = onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
@@ -258,11 +293,13 @@ fun SettingsScreen(
                     hazeState = hazeState,
                     onToggle = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        expandedSections = if (section in expandedSections) {
-                            expandedSections - section
-                        } else {
+                        val expanding = section !in expandedSections
+                        expandedSections = if (expanding) {
                             expandedSections + section
+                        } else {
+                            expandedSections - section
                         }
+                        if (expanding) scrollToSection(section)
                     },
                 ) {
                     when (section) {
@@ -277,7 +314,7 @@ fun SettingsScreen(
                             AppearanceCard(settings, viewModel, hazeState)
                         }
                         SettingsSection.AI -> {
-                            AiEngineCard(hazeState)
+                            AiEngineCard(settings, viewModel, hazeState)
                         }
                         SettingsSection.REMINDERS -> {
                             RemindersCard(settings, viewModel, hazeState)
@@ -304,7 +341,7 @@ fun SettingsScreen(
             SettingsFooter()
         }
 
-        item(key = "bottom-spacer") { Spacer(Modifier.height(180.dp)) }
+        item(key = "bottom-spacer") { Spacer(Modifier.height(tabBarInset + 84.dp)) }
     }
 }
 
@@ -325,6 +362,7 @@ private fun CompanionAppCard(hazeState: HazeState) {
 
     val onSurface = MaterialTheme.colorScheme.onSurface
     val accent = if (installed) MaterialTheme.colorScheme.primary else onSurface.copy(alpha = 0.5f)
+    val statusLabel = if (installed) "connected" else "not installed"
     GlassCard(
         hazeState = hazeState,
         modifier = Modifier
@@ -332,7 +370,11 @@ private fun CompanionAppCard(hazeState: HazeState) {
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(16.dp)
+                // Status icon + name + description announce as one TalkBack stop; the icon's
+                // meaning rides in stateDescription so it isn't dropped as a decorative glyph.
+                .semantics(mergeDescendants = true) { stateDescription = statusLabel },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -357,6 +399,7 @@ private fun CompanionAppCard(hazeState: HazeState) {
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
@@ -383,10 +426,11 @@ private fun SettingsQuickNav(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Text(
-            text = "Quick actions",
+            text = "Jump to a section",
             style = MaterialTheme.typography.labelLarge,
             color = onSurface.copy(alpha = 0.7f),
             fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(8.dp))
         ScrollableChipRow(selectedIndex = selectedChipIndex) {
@@ -428,10 +472,23 @@ private fun CollapsibleSettingsSection(
     onToggle: () -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val reduceMotion = LocalReduceMotion.current
+    // Spring rotation matches the app's motion language (north-star: "spring physics ONLY");
+    // collapses to an instant snap when the user has requested reduced motion.
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = Motion.smooth(),
+        animationSpec = if (reduceMotion) snap() else Motion.smooth(),
         label = "settingsSectionChevron",
+    )
+
+    // Springy pressed feedback: the default ripple over transparent glass is barely perceptible,
+    // so tapping the section header gets the same tactile scale as the app's other glass cards.
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = if (reduceMotion) snap() else Motion.snappy(),
+        label = "settingsSectionPressScale",
     )
 
     Column(
@@ -444,10 +501,24 @@ private fun CollapsibleSettingsSection(
                 hazeState = hazeState,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .graphicsLayer {
+                        scaleX = pressScale
+                        scaleY = pressScale
+                    }
                     // Clip BEFORE clickable so the ripple is bounded to the rounded corners;
                     // GlassCard's internal clip runs after this incoming modifier, too late for the ripple.
                     .clip(GlassDefaults.cardShape)
-                    .clickable(onClick = onToggle, role = Role.Button),
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onToggle,
+                        role = Role.Button,
+                    )
+                    // Announce the collapsed/expanded state on the card so the chevron isn't read as
+                    // a separate, redundant stop.
+                    .semantics {
+                        stateDescription = if (expanded) "Expanded" else "Collapsed"
+                    },
                 shape = GlassDefaults.cardShape,
             ) {
                 SettingsSectionCardHeader(
@@ -460,6 +531,7 @@ private fun CollapsibleSettingsSection(
         } else {
             SectionHeader(
                 title = section.headerLabel,
+                icon = section.icon,
                 style = MaterialTheme.typography.labelLarge,
                 titleColor = MaterialTheme.colorScheme.primary,
                 dividerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
@@ -471,8 +543,10 @@ private fun CollapsibleSettingsSection(
 
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(animationSpec = Motion.smooth()) + fadeIn(animationSpec = Motion.smooth()),
-            exit = shrinkVertically(animationSpec = Motion.smooth()) + fadeOut(animationSpec = Motion.smooth()),
+            enter = expandVertically(animationSpec = if (reduceMotion) snap() else Motion.smooth()) +
+                fadeIn(animationSpec = if (reduceMotion) snap() else Motion.smooth()),
+            exit = shrinkVertically(animationSpec = if (reduceMotion) snap() else Motion.smooth()) +
+                fadeOut(animationSpec = if (reduceMotion) snap() else Motion.smooth()),
         ) {
             Column(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
                 content()
@@ -524,7 +598,9 @@ private fun SettingsSectionCardHeader(
         }
         Icon(
             imageVector = Icons.Default.ExpandMore,
-            contentDescription = if (expanded) "Collapse" else "Expand",
+            // State is announced on the parent card via stateDescription; keep this glyph decorative
+            // so TalkBack doesn't read "Collapsed" twice.
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .padding(start = 8.dp)
@@ -591,20 +667,11 @@ private fun PermissionsCard(viewModel: MainViewModel, hazeState: HazeState) {
     }
 
     SettingsCard(hazeState = hazeState) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.Security,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text("App permissions", color = onSurface, fontWeight = FontWeight.Medium)
-        }
+        CardHeader(icon = Icons.Default.Security, title = "App permissions")
         Text(
             text = "Meridian only asks for access when a feature needs it. Grant permissions here or in system settings.",
-            color = onSurface.copy(alpha = 0.5f),
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall,
+            color = onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
         )
 
@@ -689,7 +756,15 @@ private fun PermissionRow(
     }
 
     Column {
-        Row(verticalAlignment = Alignment.Top) {
+        Row(
+            // Icon + title + status + description read as one TalkBack node, e.g.
+            // "Location, Granted, Resolve your home time zone…", so the permission's name,
+            // state, and purpose arrive together in a single swipe.
+            modifier = Modifier.semantics(mergeDescendants = true) {
+                stateDescription = statusLabel
+            },
+            verticalAlignment = Alignment.Top,
+        ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
@@ -704,28 +779,44 @@ private fun PermissionRow(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(title, color = onSurface, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                    Text(statusLabel, color = statusColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = onSurface,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        statusLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = statusColor,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 Text(
                     description,
-                    color = onSurface.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onSurface.copy(alpha = 0.6f),
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
         if (applicable && !granted) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = onGrant,
                     shape = ExpressiveShapes.small,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .sizeIn(minHeight = 48.dp),
                 ) {
                     Text("Allow $title access")
                 }
-                TextButton(onClick = onOpenSettings) {
+                TextButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.sizeIn(minHeight = 48.dp),
+                ) {
                     Text("System settings")
                 }
             }
@@ -736,13 +827,19 @@ private fun PermissionRow(
 @Composable
 private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel, hazeState: HazeState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val reduceMotion = LocalReduceMotion.current
     SettingsCard(hazeState = hazeState) {
-        Text("Clock format", color = onSurface, fontWeight = FontWeight.Medium)
+        Text(
+            "Clock format",
+            style = MaterialTheme.typography.titleSmall,
+            color = onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
             Text(
                 "Choose how every clock renders the hour.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MeridianFilterChip(
@@ -798,8 +895,8 @@ private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel,
 
             AnimatedVisibility(
                 visible = settings.backdropEnabled,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically(),
+                enter = if (reduceMotion) fadeIn(snap()) else fadeIn() + expandVertically(),
+                exit = if (reduceMotion) fadeOut(snap()) else fadeOut() + shrinkVertically(),
             ) {
                 BackdropIntensitySlider(
                     intensity = settings.backdropIntensity,
@@ -809,13 +906,18 @@ private fun AppearanceCard(settings: MeridianSettings, viewModel: MainViewModel,
 
             Spacer(Modifier.height(20.dp))
 
-            Text("World map style", color = onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                "World map style",
+                style = MaterialTheme.typography.titleSmall,
+                color = onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 "Realistic uses the full photo texture, atmosphere and night-lights. Balanced keeps " +
                     "the texture but drops the heavy effects. Performance shades a flat globe. Vector " +
                     "is a 2D flat outline map (tiny, crisp, recolors with the theme).",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
             )
             val mapStyleOptions = remember {
@@ -847,6 +949,12 @@ private fun GlassOpacitySlider(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val haptics = LocalHapticFeedback.current
+    val levelLabel = when (opacity) {
+        in MIN_GLASS_OPACITY..24 -> "Transparent"
+        in 25..49 -> "Light"
+        in 50..74 -> "Medium"
+        else -> "Opaque"
+    }
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -854,26 +962,23 @@ private fun GlassOpacitySlider(
         ) {
             Text(
                 text = "Agenda & scrubber glass",
+                style = MaterialTheme.typography.bodyLarge,
                 color = onSurface,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = when (opacity) {
-                    in MIN_GLASS_OPACITY..24 -> "Transparent"
-                    in 25..49 -> "Light"
-                    in 50..74 -> "Medium"
-                    else -> "Opaque"
-                },
-                color = onSurface.copy(alpha = 0.6f),
-                fontSize = 12.sp,
+                text = levelLabel,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         Text(
             text = "Glass opacity and contrast for the agenda pill, the compact scrubber pill, " +
                 "and the expanded time dial. Higher means a more solid, legible card.",
-            color = onSurface.copy(alpha = 0.5f),
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall,
+            color = onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         )
         val opacitySliderColors = SliderDefaults.colors(
@@ -894,6 +999,12 @@ private fun GlassOpacitySlider(
             valueRange = MIN_GLASS_OPACITY.toFloat()..MAX_GLASS_OPACITY.toFloat(),
             steps = MAX_GLASS_OPACITY - MIN_GLASS_OPACITY - 1,
             colors = opacitySliderColors,
+            // Announce the named level ("Glass opacity, Medium") rather than a bare 0–100 percent
+            // that means nothing to a TalkBack user.
+            modifier = Modifier.semantics {
+                contentDescription = "Glass opacity"
+                stateDescription = levelLabel
+            },
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -901,13 +1012,13 @@ private fun GlassOpacitySlider(
         ) {
             Text(
                 text = "Transparent",
+                style = MaterialTheme.typography.labelSmall,
                 color = onSurface.copy(alpha = 0.45f),
-                fontSize = 11.sp,
             )
             Text(
                 text = "Opaque",
+                style = MaterialTheme.typography.labelSmall,
                 color = onSurface.copy(alpha = 0.45f),
-                fontSize = 11.sp,
             )
         }
     }
@@ -931,20 +1042,22 @@ private fun BackdropIntensitySlider(
         ) {
             Text(
                 text = "Backdrop intensity",
+                style = MaterialTheme.typography.bodyLarge,
                 color = onSurface,
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f),
             )
             Text(
                 text = "$intensity%",
-                color = onSurface.copy(alpha = 0.6f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
             )
         }
         Text(
             text = "How strongly the sun and moon glow through the glass.",
-            color = onSurface.copy(alpha = 0.5f),
-            fontSize = 12.sp,
+            style = MaterialTheme.typography.bodySmall,
+            color = onSurface.copy(alpha = 0.6f),
             modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
         )
         val intensitySliderColors = SliderDefaults.colors(
@@ -965,6 +1078,10 @@ private fun BackdropIntensitySlider(
             valueRange = MIN_BACKDROP_INTENSITY.toFloat()..MAX_BACKDROP_INTENSITY.toFloat(),
             steps = MAX_BACKDROP_INTENSITY - MIN_BACKDROP_INTENSITY - 1,
             colors = intensitySliderColors,
+            modifier = Modifier.semantics {
+                contentDescription = "Backdrop intensity"
+                stateDescription = "$intensity percent"
+            },
         )
     }
 }
@@ -979,12 +1096,30 @@ private fun SettingSwitchRow(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val haptics = LocalHapticFeedback.current
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            // Title + subtitle + switch read as one toggle node so TalkBack announces the
+            // setting's name, purpose, and on/off state together in a single swipe.
+            .semantics(mergeDescendants = true) {},
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = onSurface, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = onSurface.copy(alpha = 0.5f), fontSize = 12.sp)
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 12.dp),
+        ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         val switchColors = SwitchDefaults.colors(
             checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
@@ -1023,7 +1158,10 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
     }
 
     SettingsCard(hazeState = hazeState) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector = Icons.Default.Home,
                     contentDescription = null,
@@ -1034,13 +1172,15 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = residence?.let { "Home · ${it.displayName}" } ?: "No home set",
+                        style = MaterialTheme.typography.bodyLarge,
                         color = onSurface,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
                         text = "Your usual base for the Now card and planning. Resolved on-device — never sent anywhere.",
-                        color = onSurface.copy(alpha = 0.5f),
-                        fontSize = 12.sp
+                        style = MaterialTheme.typography.bodySmall,
+                        color = onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(top = 2.dp),
                     )
                 }
             }
@@ -1075,7 +1215,11 @@ private fun HomeLocationCard(viewModel: MainViewModel, savedZones: List<SavedZon
                 status?.let {
                     Column {
                         Spacer(Modifier.height(8.dp))
-                        Text(it, color = onSurface.copy(alpha = 0.7f), fontSize = 12.sp)
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = onSurface.copy(alpha = 0.75f),
+                        )
                     }
                 }
             }
@@ -1105,6 +1249,7 @@ private fun HomeCountryCard(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val homeCountry = savedZones.homeCountryZone()
+    val reduceMotion = LocalReduceMotion.current
     var status by remember { mutableStateOf<String?>(null) }
     var showCityPicker by remember { mutableStateOf(false) }
 
@@ -1117,14 +1262,17 @@ private fun HomeCountryCard(
             )
             AnimatedVisibility(
                 visible = settings.homeCountryEnabled,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+                enter = if (reduceMotion) fadeIn(snap()) else fadeIn() + expandVertically(),
+                exit = if (reduceMotion) fadeOut(snap()) else fadeOut() + shrinkVertically()
             ) {
                 Column {
                     Spacer(Modifier.height(12.dp))
                     HorizontalDivider(color = onSurface.copy(alpha = 0.08f))
                     Spacer(Modifier.height(12.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.semantics(mergeDescendants = true) {},
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Public,
                             contentDescription = null,
@@ -1135,13 +1283,15 @@ private fun HomeCountryCard(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = homeCountry?.let { "City · ${it.displayName}" } ?: "No city chosen",
+                                style = MaterialTheme.typography.bodyLarge,
                                 color = onSurface,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
                                 text = "Pick the city that represents your home country time zone.",
-                                color = onSurface.copy(alpha = 0.5f),
-                                fontSize = 12.sp
+                                style = MaterialTheme.typography.bodySmall,
+                                color = onSurface.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 2.dp),
                             )
                         }
                     }
@@ -1163,7 +1313,11 @@ private fun HomeCountryCard(
                         status?.let {
                             Column {
                                 Spacer(Modifier.height(8.dp))
-                                Text(it, color = onSurface.copy(alpha = 0.7f), fontSize = 12.sp)
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = onSurface.copy(alpha = 0.75f),
+                                )
                             }
                         }
                     }
@@ -1187,46 +1341,66 @@ private fun HomeCountryCard(
 }
 
 @Composable
-private fun AiEngineCard(hazeState: HazeState) {
+private fun AiEngineCard(
+    settings: MeridianSettings,
+    viewModel: MainViewModel,
+    hazeState: HazeState,
+) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     SettingsCard(hazeState = hazeState) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Memory,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = "Gemini Nano · on-device",
-                    color = onSurface,
-                    fontWeight = FontWeight.Medium
-                )
-            }
+            CardHeader(icon = Icons.Default.Memory, title = "Assistant engine")
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "The Assistant runs Gemini Nano directly on your device when supported — no API key, and your prompts never leave the phone. On devices without on-device support it transparently falls back to cloud Gemini.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
+                text = "The Assistant runs on-device with Gemini Nano when supported — no API key, and your prompts never leave the phone. Choose Cloud to always use a hosted model.",
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MeridianFilterChip(
+                    label = "On-Device",
+                    selected = settings.aiEngine == AiEngine.ON_DEVICE,
+                    onClick = { viewModel.setAiEngine(AiEngine.ON_DEVICE) },
+                )
+                MeridianFilterChip(
+                    label = "Cloud",
+                    selected = settings.aiEngine == AiEngine.CLOUD,
+                    onClick = { viewModel.setAiEngine(AiEngine.CLOUD) },
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics(mergeDescendants = true) {},
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.CheckCircle,
+                    imageVector = if (settings.aiEngine == AiEngine.ON_DEVICE) {
+                        Icons.Outlined.CheckCircle
+                    } else {
+                        Icons.Filled.Cloud
+                    },
                     contentDescription = null,
-                    tint = GlassDefaults.positive,
+                    tint = if (settings.aiEngine == AiEngine.ON_DEVICE) {
+                        GlassDefaults.positive
+                    } else {
+                        MaterialTheme.colorScheme.tertiary
+                    },
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = "On-device first · no key required",
-                    color = onSurface.copy(alpha = 0.7f),
-                    fontSize = 12.sp
+                    text = if (settings.aiEngine == AiEngine.ON_DEVICE) {
+                        "On-device first · no key required · rules fallback"
+                    } else {
+                        "Cloud model · prompts may leave your device"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onSurface.copy(alpha = 0.75f),
+                    fontWeight = FontWeight.Medium,
                 )
             }
     }
@@ -1251,41 +1425,27 @@ private fun RemindersCard(
     }
 
     SettingsCard(hazeState = hazeState) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.NotificationsActive,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Alarm Lead Time", color = onSurface, fontWeight = FontWeight.Medium)
-            }
+            CardHeader(icon = Icons.Default.NotificationsActive, title = "Alarm lead time")
             Spacer(Modifier.height(8.dp))
             Text(
                 "Adjust how many minutes prior to an event the system notification alarm triggers.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
-            val remindersHaptics = LocalHapticFeedback.current
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // Same scrollable chip strip (edge fades + auto-scroll to the selected option) the rest
+            // of the app uses, instead of a bare horizontalScroll Row.
+            ScrollableChipRow(
+                selectedIndex = leadTimeOptions.indexOfFirst {
+                    it.first == settings.reminderLeadMinutes
+                },
             ) {
-                leadTimeOptions.forEach { (minutes, label) ->
-                    val isSelected = settings.reminderLeadMinutes == minutes
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = {
-                            remindersHaptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.setReminderLeadMinutes(minutes)
-                        },
-                        label = { Text(label) },
-                        colors = meridianFilterChipColors(),
+                items(leadTimeOptions, key = { it.first }) { (minutes, label) ->
+                    MeridianFilterChip(
+                        label = label,
+                        selected = settings.reminderLeadMinutes == minutes,
+                        onClick = { viewModel.setReminderLeadMinutes(minutes) },
                     )
                 }
             }
@@ -1300,21 +1460,12 @@ private fun WorkHoursCard(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     SettingsCard(hazeState = hazeState) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Work,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("Default Work Hours", color = onSurface, fontWeight = FontWeight.Medium)
-            }
+            CardHeader(icon = Icons.Default.Work, title = "Default work hours")
             Spacer(Modifier.height(8.dp))
             Text(
                 "Define the starting point and ending point for standard business hours. New participants in the planner default to these values.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
@@ -1361,7 +1512,9 @@ private fun OnDeviceCard(hazeState: HazeState) {
         shape = GlassDefaults.cardShape
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(16.dp)
+                .semantics(mergeDescendants = true) {},
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
@@ -1372,11 +1525,17 @@ private fun OnDeviceCard(hazeState: HazeState) {
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("On-device first validation", color = onSurface, fontWeight = FontWeight.Medium)
+                Text(
+                    "On-device first validation",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = onSurface,
+                    fontWeight = FontWeight.Medium,
+                )
                 Text(
                     "All time-zone lookups and slot math run on-device. Cloud AI is an opt-in fallback only.",
-                    color = onSurface.copy(alpha = 0.5f),
-                    fontSize = 12.sp
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onSurface.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
@@ -1386,24 +1545,32 @@ private fun OnDeviceCard(hazeState: HazeState) {
 @Composable
 private fun ReseedCard(viewModel: MainViewModel, hazeState: HazeState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
+    val reduceMotion = LocalReduceMotion.current
     var seeded by remember { mutableStateOf(false) }
     val buttonContainerColor by animateColorAsState(
         targetValue = if (seeded) MaterialTheme.colorScheme.secondaryContainer
                       else MaterialTheme.colorScheme.primaryContainer,
+        animationSpec = if (reduceMotion) snap() else Motion.smooth(),
         label = "reseedButtonColor"
     )
     val buttonContentColor by animateColorAsState(
         targetValue = if (seeded) MaterialTheme.colorScheme.onSecondaryContainer
                       else MaterialTheme.colorScheme.onPrimaryContainer,
+        animationSpec = if (reduceMotion) snap() else Motion.smooth(),
         label = "reseedContentColor"
     )
     SettingsCard(hazeState = hazeState) {
-            Text("Seed starter zones", color = onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                "Seed starter zones",
+                style = MaterialTheme.typography.titleSmall,
+                color = onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 text = "Adds London, Tokyo, and New York to your pinned zones.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 12.dp)
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
             )
             Button(
                 onClick = {
@@ -1557,31 +1724,36 @@ private fun AboutCard(hazeState: HazeState) {
             MeridianWordmark(modifier = Modifier.padding(bottom = 8.dp))
             Text(
                 text = "Time & world planner",
+                style = MaterialTheme.typography.bodyMedium,
                 color = onSurface.copy(alpha = 0.6f),
-                fontSize = 13.sp,
             )
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable {
+                    .clickable(role = Role.Button) {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                         clipboard.setText(AnnotatedString(buildDiagnosticText(context)))
                         copied = true
+                    }
+                    // Guarantee the Android 48dp accessible target on this compact tap-to-copy row.
+                    .sizeIn(minHeight = 48.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Version $versionLabel, tap to copy diagnostics"
                     }
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = if (copied) "Diagnostics copied" else "Version $versionLabel",
-                    color = if (copied) MaterialTheme.colorScheme.primary else onSurface.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (copied) MaterialTheme.colorScheme.primary else onSurface.copy(alpha = 0.55f),
                 )
                 if (!copied) {
                     Spacer(Modifier.width(6.dp))
                     Icon(
                         Icons.Default.ContentCopy,
-                        contentDescription = "Copy diagnostics",
+                        contentDescription = null,
                         tint = onSurface.copy(alpha = 0.35f),
                         modifier = Modifier.size(14.dp),
                     )
@@ -1591,17 +1763,17 @@ private fun AboutCard(hazeState: HazeState) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     text = "Debug build",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.tertiary,
-                    fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "Local clocks, multi-zone planning, and optional on-device AI — built with a privacy-first, on-device engine.",
+                style = MaterialTheme.typography.bodyMedium,
                 color = onSurface.copy(alpha = 0.65f),
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
         }
     }
@@ -1622,9 +1794,12 @@ private fun LegalNoticesCard(hazeState: HazeState) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
             Text(
                 text = "Legal & privacy",
+                style = MaterialTheme.typography.titleSmall,
                 color = onSurface,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .semantics { heading() },
             )
             SettingsLinkRow(
                 icon = Icons.Default.PrivacyTip,
@@ -1687,9 +1862,12 @@ private fun SupportCard(hazeState: HazeState) {
         Column(modifier = Modifier.padding(vertical = 8.dp)) {
             Text(
                 text = "Support",
+                style = MaterialTheme.typography.titleSmall,
                 color = onSurface,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .semantics { heading() },
             )
             SettingsLinkRow(
                 icon = Icons.Default.Email,
@@ -1721,13 +1899,17 @@ private fun DataManagementCard(hazeState: HazeState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
 
     SettingsCard(hazeState = hazeState) {
-            Text("Manage local data", color = onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                "Manage local data",
+                style = MaterialTheme.typography.titleSmall,
+                color = onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(
                 text = "Meridian stores zones, planner data, and preferences on this device. " +
                     "Clear storage from system settings to remove everything — this cannot be undone.",
-                color = onSurface.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                lineHeight = 17.sp,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 6.dp, bottom = 12.dp),
             )
             OutlinedButton(
@@ -1775,14 +1957,33 @@ private fun SettingsLinkRow(
 ) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val haptics = LocalHapticFeedback.current
+    val reduceMotion = LocalReduceMotion.current
+
+    // Springy pressed feedback matching the section-header cards, since the default ripple over
+    // transparent glass is barely perceptible.
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = if (reduceMotion) snap() else Motion.snappy(),
+        label = "settingsLinkPressScale",
+    )
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { role = Role.Button }
-            .clickable {
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            // Icon + title + subtitle read as one Button node; the trailing chevron is decorative.
+            .semantics(mergeDescendants = true) { role = Role.Button }
+            .clickable(interactionSource = interactionSource, indication = null) {
                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClick()
             }
+            // Keep the whole row at the 48dp accessible minimum even with a single-line subtitle.
+            .sizeIn(minHeight = 48.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1794,8 +1995,18 @@ private fun SettingsLinkRow(
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = onSurface, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = onSurface.copy(alpha = 0.5f), fontSize = 12.sp)
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = onSurface,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         Icon(
             imageVector = Icons.Default.ChevronRight,

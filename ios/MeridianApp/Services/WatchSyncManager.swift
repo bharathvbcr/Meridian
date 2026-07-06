@@ -56,7 +56,9 @@ final class WatchSyncManager: NSObject {
     private var modelContainer: ModelContainer?
 
     /// Token for the `ModelContext.didSave` observation, kept alive for the app's lifetime.
-    private var didSaveObserver: (any NSObjectProtocol)?
+    /// `nonisolated(unsafe)` so the `nonisolated deinit` can release it; by the time deinit
+    /// runs no other reference to this `@MainActor` singleton remains, so the access is race-free.
+    nonisolated(unsafe) private var didSaveObserver: (any NSObjectProtocol)?
 
     private override init() {
         super.init()

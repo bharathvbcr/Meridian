@@ -111,7 +111,7 @@ private struct ZoneRow: View {
         // (e.g. "PST"), not which zone the date is rendered in.
         return instant.formatted(
             Date.FormatStyle(timeZone: tz)
-                .hour(.defaultDigits)
+                .hour(.defaultDigits(amPM: .abbreviated))
                 .minute(.twoDigits)
         )
     }
@@ -167,7 +167,7 @@ private struct NextEventRow: View {
         return event.date.formatted(
             Date.FormatStyle(timeZone: tz)
                 .weekday(.abbreviated)
-                .hour(.defaultDigits)
+                .hour(.defaultDigits(amPM: .abbreviated))
                 .minute(.twoDigits)
         )
     }

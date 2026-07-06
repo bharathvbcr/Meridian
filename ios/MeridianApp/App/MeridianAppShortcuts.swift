@@ -66,7 +66,7 @@ struct OpenWorldClockIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        MeridianIntentRouter.shared.route(.world)
+        MeridianIntentRouter.shared.route(.world())
         return .result()
     }
 }
@@ -83,6 +83,23 @@ struct OpenPlannerIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         MeridianIntentRouter.shared.route(.plan)
+        return .result()
+    }
+}
+
+/// Opens the World Clock tab focused on adding a location (Android's `addzone`
+/// launcher shortcut, which deep-links to the same destination).
+struct AddZoneIntent: AppIntent {
+    static let title: LocalizedStringResource = "Add a Location"
+    static let description = IntentDescription(
+        "Open Meridian's world clock to search for and pin a new city or time zone."
+    )
+
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        MeridianIntentRouter.shared.route(.world(openCityPicker: true))
         return .result()
     }
 }
@@ -115,6 +132,16 @@ struct MeridianAppShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Planner",
             systemImageName: "calendar.badge.clock"
+        )
+        AppShortcut(
+            intent: AddZoneIntent(),
+            phrases: [
+                "Add a location in \(.applicationName)",
+                "Add a time zone in \(.applicationName)",
+                "\(.applicationName) add zone"
+            ],
+            shortTitle: "Add Location",
+            systemImageName: "plus.circle.fill"
         )
     }
 }

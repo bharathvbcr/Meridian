@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -15,6 +17,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -49,8 +52,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.LiquidGlassSurface
+import com.example.core.designsystem.LocalReduceMotion
 import com.example.core.designsystem.Motion
 import dev.chrisbanes.haze.HazeState
+
+/**
+ * Android's minimum recommended touch target. Every tab enforces this via [defaultMinSize] so the
+ * icon-only (collapsed / unselected) items stay comfortably tappable even though their visual glass
+ * pill is smaller.
+ */
+private val NavTouchTargetMin = 48.dp
+
+/** Tactile shrink applied to a tab while pressed, matching the liquid-glass feel elsewhere. */
+private const val NavPressedScale = 0.88f
 
 @Composable
 fun GlassNavBar(
@@ -135,6 +149,7 @@ private fun NavItem(
     onClick: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val reduceMotion = LocalReduceMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
@@ -157,9 +172,10 @@ private fun NavItem(
         animationSpec = Motion.smooth(),
         label = "navItemBackground"
     )
-    // Tactile shrink on press, matching the liquid-glass feel.
+    // Tactile shrink on press, matching the liquid-glass feel. Skipped entirely when the user
+    // has requested reduced motion (north-star: "Always respect Reduce Motion / animator scale").
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.88f else 1f,
+        targetValue = if (pressed && !reduceMotion) NavPressedScale else 1f,
         animationSpec = Motion.snappy(),
         label = "navItemScale"
     )
@@ -169,6 +185,8 @@ private fun NavItem(
             .scale(scale)
             .clip(CircleShape)
             .background(background)
+            // Guarantee a 48dp touch target even when the visual pill (icon-only tabs) is smaller.
+            .defaultMinSize(minWidth = NavTouchTargetMin, minHeight = NavTouchTargetMin)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -177,10 +195,12 @@ private fun NavItem(
                     onClick()
                 }
             )
-            .semantics {
+            // Merge into one focusable node so TalkBack announces the whole tab once. With Role.Tab
+            // it already appends "tab", so the description is just the destination name (no doubling).
+            .semantics(mergeDescendants = true) {
                 this.selected = selected
                 this.role = Role.Tab
-                this.contentDescription = "$label tab"
+                this.contentDescription = label
             }
             .padding(horizontal = if (selected && showLabel) 14.dp else 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -191,11 +211,14 @@ private fun NavItem(
             contentDescription = null,
             tint = contentColor
         )
-        // Show the label only for the active tab so the current page is obvious.
+        // Show the label only for the active tab so the current page is obvious. The reveal
+        // collapses to an instant swap under reduce-motion instead of the expand/fade.
         AnimatedVisibility(
             visible = selected && showLabel,
-            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
-            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
+            enter = if (reduceMotion) EnterTransition.None
+            else fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+            exit = if (reduceMotion) ExitTransition.None
+            else fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
         ) {
             Text(
                 text = label,
@@ -212,11 +235,12 @@ private fun AiNavButton(
     onClick: () -> Unit
 ) {
     val haptics = LocalHapticFeedback.current
+    val reduceMotion = LocalReduceMotion.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.88f else 1f,
+        targetValue = if (pressed && !reduceMotion) NavPressedScale else 1f,
         animationSpec = Motion.snappy(),
         label = "aiButtonScale"
     )
@@ -238,6 +262,8 @@ private fun AiNavButton(
             .scale(scale)
             .clip(CircleShape)
             .background(background)
+            // Guarantee a 48dp touch target for the center AI slot as well.
+            .defaultMinSize(minWidth = NavTouchTargetMin, minHeight = NavTouchTargetMin)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -246,10 +272,12 @@ private fun AiNavButton(
                     onClick()
                 }
             )
-            .semantics {
+            // Merge into one focusable node; Role.Tab appends "tab" so the description is the
+            // fuller destination name ("AI Assistant") that the icon-only visual can't convey.
+            .semantics(mergeDescendants = true) {
                 this.selected = selected
                 this.role = Role.Tab
-                this.contentDescription = "AI Assistant tab"
+                this.contentDescription = "AI Assistant"
             }
             .padding(horizontal = if (selected) 14.dp else 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -262,8 +290,10 @@ private fun AiNavButton(
         )
         AnimatedVisibility(
             visible = selected,
-            enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
-            exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
+            enter = if (reduceMotion) EnterTransition.None
+            else fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
+            exit = if (reduceMotion) ExitTransition.None
+            else fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)
         ) {
             Text(
                 text = "AI",

@@ -29,7 +29,7 @@
         android:shortcutLongLabel="@string/shortcut_zone_long">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="meridian://world"
+            android:data="meridian://addzone"
             android:targetPackage="com.Meridian.VBCR"
             android:targetClass="com.example.MainActivity" />
     </shortcut>

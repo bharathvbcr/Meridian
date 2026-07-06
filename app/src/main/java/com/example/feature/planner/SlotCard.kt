@@ -3,7 +3,7 @@ package com.example.feature.planner
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.snap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -49,10 +49,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.example.core.designsystem.LocalReduceMotion
+import com.example.core.designsystem.Motion
 import com.example.core.designsystem.PlannerCard
 import com.example.core.time.FindOverlapUseCase.OverlapSlot
 import com.example.core.time.LocalView
@@ -99,37 +101,68 @@ internal fun SlotCard(
     val localDateStr = remember(localZdt) {
         localZdt.format(TimeFormats.mediumDate())
     }
+    val reduceMotion = LocalReduceMotion.current
+    // Spring rotation matches the app's motion language (north-star: "spring physics ONLY").
+    // Collapses to an instant snap when the user has requested reduced motion.
     val chevronRotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = if (reduceMotion) snap() else Motion.smooth(),
         label = "chevron"
     )
 
     PlannerCard(
         modifier = modifier
             .fillMaxWidth()
-            .let { if (interactive) it.clickable(onClick = onToggle, role = Role.Button) else it },
+            .let {
+                if (interactive) {
+                    it
+                        .semantics {
+                            // Announce the expand/collapse state on the card itself so the chevron
+                            // (cleared below) isn't read as a separate, redundant stop.
+                            stateDescription = if (expanded) "Expanded" else "Collapsed"
+                        }
+                        .clickable(onClick = onToggle, role = Role.Button)
+                } else {
+                    it
+                }
+            },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "$localTime – $localEndTime · $localDateStr",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = localLocationName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
+                // Merge the time range, date, location and quality rating into one TalkBack stop so
+                // the fair-slot summary reads as a single coherent utterance instead of three
+                // fragments (with RatingBadge's out-of-context "Meeting quality: X").
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription =
+                                "$localTime to $localEndTime, $localDateStr, " +
+                                "$localLocationName, quality ${slot.ratingLabel}"
+                        }
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "$localTime – $localEndTime · $localDateStr",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = localLocationName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    RatingBadge(slot.ratingLabel)
                 }
-                RatingBadge(slot.ratingLabel)
                 if (interactive) {
                     Spacer(Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        // Decorative: the card's stateDescription already announces Expanded/Collapsed.
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                         modifier = Modifier
                             .size(20.dp)
@@ -291,11 +324,16 @@ internal fun ParticipantTag(
             .clip(RoundedCornerShape(50))
             .background(style.color.copy(alpha = 0.14f))
             .padding(horizontal = 8.dp, vertical = 4.dp)
+            // Read each participant as one node ("Ada, 3:00 PM (+1 d), Asleep") instead of three
+            // fragments; the inner icon description is nulled below so it isn't announced twice.
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$who, $time$dateDiff, ${style.label}"
+            }
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = style.icon,
-                contentDescription = style.label,
+                contentDescription = null,
                 tint = style.color,
                 modifier = Modifier.size(12.dp)
             )
@@ -324,7 +362,7 @@ internal fun ParticipantTag(
                 )
                 Text(
                     text = style.label,
-                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall,
                     color = style.color
                 )
             }

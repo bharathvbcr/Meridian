@@ -25,9 +25,11 @@ struct SunTimesLine: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 10))
-            .foregroundStyle(textColor.opacity(0.6))
-            .padding(.top, 2)
+            .font(.labelMedium)
+            .foregroundStyle(textColor.opacity(0.75))
+            .padding(.top, MeridianSpacing.xs.rawValue / 2)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel)
     }
 
     // MARK: - Computed
@@ -60,6 +62,24 @@ struct SunTimesLine: View {
             let rise = TimeFormats.hourMinute(date: sunrise, timeZoneId: zoneId, use24Hour: use24Hour)
             let set  = TimeFormats.hourMinute(date: sunset,  timeZoneId: zoneId, use24Hour: use24Hour)
             return "🌅 \(rise)   🌇 \(set)"
+        }
+        return "Sun times unavailable"
+    }
+
+    /// Plain-language equivalent of `label` for VoiceOver, so the emoji glyphs are never
+    /// spoken by name (e.g. "sunrise over mountains"). Kept in lockstep with `label` above.
+    private var accessibilityLabel: String {
+        let s = sun
+        if s.polarDay {
+            return "Midnight sun, no sunset"
+        }
+        if s.polarNight {
+            return "Polar night, no sunrise"
+        }
+        if let sunrise = s.sunrise, let sunset = s.sunset {
+            let rise = TimeFormats.hourMinute(date: sunrise, timeZoneId: zoneId, use24Hour: use24Hour)
+            let set  = TimeFormats.hourMinute(date: sunset,  timeZoneId: zoneId, use24Hour: use24Hour)
+            return "Sunrise \(rise), sunset \(set)"
         }
         return "Sun times unavailable"
     }

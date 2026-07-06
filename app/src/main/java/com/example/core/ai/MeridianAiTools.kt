@@ -449,10 +449,15 @@ class MeridianAiTools(
 
     private fun detectIntent(prompt: String): AiQueryIntent {
         val p = prompt.lowercase(Locale.ROOT)
+        // A clock time is what separates a conversion ("what's 3 PM in London") from a plain
+        // current-time question ("what's the time in London"). Without one, generic interrogatives
+        // must not win CONVERT — else CURRENT_TIME queries get mislabelled and cached stale.
+        val hasClockTime = parseClockTime(prompt) != null
         return when {
             SCHEDULE_HINT.any { p.contains(it) } -> AiQueryIntent.SCHEDULE
             MEETING_HINT.any { p.contains(it) } -> AiQueryIntent.MEETING
-            CONVERT_HINT.any { p.contains(it) } || parseClockTime(prompt) != null && p.contains(" to ") ->
+            CONVERT_HINT.any { p.contains(it) } -> AiQueryIntent.CONVERT
+            hasClockTime && (p.contains(" to ") || WEAK_CONVERT_HINT.any { p.contains(it) }) ->
                 AiQueryIntent.CONVERT
             CURRENT_TIME_HINT.any { p.contains(it) } -> AiQueryIntent.CURRENT_TIME
             else -> AiQueryIntent.GENERAL
@@ -619,7 +624,10 @@ class MeridianAiTools(
             "meeting", "meet with", "best time", "good time", "fair time", "overlap",
             "call with", "schedule a call", "find a time", "when can we", "time to meet",
         )
-        val CONVERT_HINT = listOf("convert", "what is", "what's", "equals", "equivalent")
+        val CONVERT_HINT = listOf("convert", "equals", "equivalent")
+        // Generic interrogatives — imply a conversion only alongside a clock time, so
+        // "what's the time in Tokyo?" stays CURRENT_TIME instead of a bogus conversion.
+        val WEAK_CONVERT_HINT = listOf("what is", "what's")
         val CURRENT_TIME_HINT = listOf(
             "what time", "current time", "time is it", "time in", "time now", "right now",
         )

@@ -206,18 +206,33 @@ struct SolarDaylightWidget: View {
         return cal.date(from: comps)
     }
 
+    // MARK: Accessibility
+
+    /// One coherent VoiceOver announcement for the whole card: status, then
+    /// spelled-out sunrise/sunset (never the raw ↑/↓ glyphs), then daylight summary.
+    private var accessibilityDescription: String {
+        let status = isDaylight ? "Currently daylight." : "Currently nighttime."
+        var parts: [String] = [status]
+        if let rise = sunString(sun.sunriseMinute), let set = sunString(sun.sunsetMinute) {
+            parts.append("Sunrise \(rise), sunset \(set).")
+        }
+        parts.append(daylightSummary + ".")
+        return parts.joined(separator: " ")
+    }
+
     // MARK: Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header row: status icon + title + subtitle + sun arrows.
-            HStack(alignment: .top, spacing: 12) {
+            HStack(alignment: .top, spacing: MeridianSpacing.md.rawValue) {
                 Image(systemName: isDaylight ? "sun.max.fill" : "moon.stars.fill")
                     .font(.system(size: 22))
                     .foregroundStyle(accentColor)
                     .shadow(color: accentColor.opacity(0.6), radius: 4)
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
                     Text(isDaylight ? "Sunlight Status" : "Nighttime Status")
                         .font(.titleMedium)
                         .foregroundStyle(MeridianColors.onSurface)
@@ -227,17 +242,21 @@ struct SolarDaylightWidget: View {
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
 
                     if let rise = sunString(sun.sunriseMinute), let set = sunString(sun.sunsetMinute) {
-                        Text("↑ \(rise)  ↓ \(set)")
-                            .font(.labelMedium)
-                            .foregroundStyle(MeridianColors.primary)
-                            .padding(.top, 2)
+                        HStack(spacing: MeridianSpacing.sm.rawValue) {
+                            Label(rise, systemImage: "sunrise.fill")
+                                .labelStyle(.titleAndIcon)
+                            Label(set, systemImage: "sunset.fill")
+                                .labelStyle(.titleAndIcon)
+                        }
+                        .font(.labelMedium)
+                        .foregroundStyle(MeridianColors.primary)
+                        .padding(.top, MeridianSpacing.xs.rawValue / 2)
+                        .accessibilityHidden(true)
                     }
                 }
 
                 Spacer(minLength: 0)
             }
-
-            Spacer().frame(height: 16)
 
             // Sun progress track.
             SunTrackView(
@@ -247,14 +266,15 @@ struct SolarDaylightWidget: View {
                 polarDay: sun.polarDay,
                 polarNight: sun.polarNight
             )
-
-            Spacer().frame(height: 8)
+            .padding(.top, MeridianSpacing.lg.rawValue) // header → track (was Spacer 16)
 
             Text(daylightSummary)
                 .font(.labelMedium)
                 .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(0.8))
+                .padding(.top, MeridianSpacing.sm.rawValue) // track → summary (was Spacer 8)
+                .accessibilityHidden(true)
         }
-        .padding(16)
+        .padding(MeridianSpacing.lg.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
         .liquidGlass(
             cornerRadius: MeridianRadius.medium.rawValue,
@@ -276,6 +296,10 @@ struct SolarDaylightWidget: View {
                 .allowsHitTesting(false)
         }
         .clipShape(RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous))
+        // One coherent announcement for the whole solar card instead of ambiguous
+        // arrow glyphs plus a hidden track.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
     }
 }
 

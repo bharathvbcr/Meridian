@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import com.example.core.time.GeoPoint
@@ -60,6 +61,14 @@ fun CelestialBackdrop(
     val zoneId = remember { ZoneId.systemDefault() }
     val geo: GeoPoint = remember(zoneId) { ZoneCoordinates.coordinateFor(zoneId.id, Instant.now()) }
 
+    // Reduce-transparency parity: the glass surfaces on top of this backdrop flatten to opaque
+    // (via `glassImpl`) whenever the OS high-contrast flag or the user override is on. When they do,
+    // the busy refracted glow behind them no longer serves its purpose and only erodes the contrast
+    // of text now sitting on solid cards. So read the *same* signal the glass reads and calm the
+    // canvas in lockstep — dim the whole scene and drop the twinkling starfield — instead of drawing
+    // the full-intensity sun/moon/stars regardless. Mirrors the iOS backdrop's reduce-transparency gate.
+    val reduceTransparency = rememberReduceTransparency() || LocalReduceTransparencyOverride.current
+
     // Recompute the sky once a minute — fast enough to track the sun, cheap enough to ignore.
     var now by remember { mutableStateOf(Instant.now()) }
     LaunchedEffect(zoneId) {
@@ -93,10 +102,18 @@ fun CelestialBackdrop(
     // version, the scene is drawn in full-resolution logical coordinates under a `scale` transform
     // rather than by shrinking the geometry — so absolute sizes (disc radius, stroke and star
     // widths) scale down with the canvas and back up on replay instead of being clamped at raw px.
+    // Under reduce-transparency, fade the glow well down so text on the now-opaque cards keeps its
+    // contrast, while still leaving a faint calm wash so the app doesn't read as flat black.
+    val effectiveIntensity =
+        (if (reduceTransparency) intensity * CALM_INTENSITY_SCALE else intensity).coerceIn(0f, 1f)
+
     Box(
         modifier = modifier
             .fillMaxSize()
-            .alpha(intensity.coerceIn(0f, 1f))
+            // Decorative ambience only — the sky conveys no information a screen reader needs, and
+            // the real time-of-day content lives in the foreground surfaces. Keep it out of the tree.
+            .clearAndSetSemantics { }
+            .alpha(effectiveIntensity)
             .drawWithCache {
                 val fullW = size.width
                 val fullH = size.height
@@ -114,7 +131,7 @@ fun CelestialBackdrop(
                         Size(bw.toFloat(), bh.toFloat()),
                     ) {
                         scale(BACKDROP_RENDER_SCALE, BACKDROP_RENDER_SCALE, pivot = Offset.Zero) {
-                            drawSky(sky, fullW, fullH)
+                            drawSky(sky, fullW, fullH, calm = reduceTransparency)
                         }
                     }
                     val dst = IntSize(fullW.toInt(), fullH.toInt())
@@ -126,11 +143,22 @@ fun CelestialBackdrop(
     )
 }
 
+/**
+ * Fraction of the configured intensity the backdrop is drawn at when reduce-transparency is on.
+ * Low enough to stop the glow from bleeding contrast out of the now-opaque cards, but non-zero so a
+ * calm celestial wash remains instead of a flat void.
+ */
+private const val CALM_INTENSITY_SCALE = 0.35f
+
 /** Fraction of the layout resolution the backdrop bitmap is rendered at; see the call site. */
 private const val BACKDROP_RENDER_SCALE = 0.5f
 
-/** Paints the full sun/moon/stars scene for [sky] into the current [DrawScope] at size [w]×[h]. */
-private fun DrawScope.drawSky(sky: SkyState, w: Float, h: Float) {
+/**
+ * Paints the full sun/moon/stars scene for [sky] into the current [DrawScope] at size [w]×[h].
+ * When [calm] is set (reduce-transparency), the fine starfield is dropped and the sun's directional
+ * rays are suppressed so the canvas is a quiet glow rather than a busy, contrast-eroding backdrop.
+ */
+private fun DrawScope.drawSky(sky: SkyState, w: Float, h: Float, calm: Boolean = false) {
     // `pulse` was an animated value; it is now a fixed mid-pulse so the scene is static (see above).
     val pulse = 0.5f
     val twinkle = 0f
@@ -141,11 +169,13 @@ private fun DrawScope.drawSky(sky: SkyState, w: Float, h: Float) {
     val cy = (0.40f - 0.30f * sky.altitude) * h
 
     if (sky.dayFactor > 0.01f) {
-        drawSun(cx, cy, w, h, sky, pulse, sky.dayFactor)
+        drawSun(cx, cy, w, h, sky, pulse, sky.dayFactor, calm)
     }
     if (sky.dayFactor < 0.99f) {
         val nightAlpha = 1f - sky.dayFactor
-        drawStars(w, h, twinkle, nightAlpha)
+        // Skip the 64-star field entirely when calm: it's the busiest, lowest-value element and the
+        // one most likely to sit behind high-contrast text.
+        if (!calm) drawStars(w, h, twinkle, nightAlpha)
         drawMoon(cx, cy, w, h, sky, pulse, nightAlpha)
     }
 }
@@ -159,6 +189,7 @@ private fun DrawScope.drawSun(
     sky: SkyState,
     pulse: Float,
     alpha: Float,
+    calm: Boolean = false,
 ) {
     val center = Offset(cx, cy)
     // Warm low sun → bright high sun. Drives both the disc and the cast light.
@@ -182,25 +213,29 @@ private fun DrawScope.drawSun(
         center = center
     )
 
-    // Soft directional rays for a touch of god-ray realism.
-    val rayLen = max(w, h) * 0.7f
-    rotate(degrees = pulse * 6f, pivot = center) {
-        for (i in 0 until 12) {
-            rotate(degrees = i * 30f, pivot = center) {
-                drawLine(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            warm.copy(alpha = 0.10f * alpha),
-                            Color.Transparent
+    // Soft directional rays for a touch of god-ray realism. Suppressed under reduce-transparency:
+    // the 12 crossing gradient streaks are the busiest part of the sun and add the least value when
+    // the goal is a quiet, high-contrast canvas.
+    if (!calm) {
+        val rayLen = max(w, h) * 0.7f
+        rotate(degrees = pulse * 6f, pivot = center) {
+            for (i in 0 until 12) {
+                rotate(degrees = i * 30f, pivot = center) {
+                    drawLine(
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                warm.copy(alpha = 0.10f * alpha),
+                                Color.Transparent
+                            ),
+                            start = center,
+                            end = Offset(center.x, center.y - rayLen)
                         ),
                         start = center,
-                        end = Offset(center.x, center.y - rayLen)
-                    ),
-                    start = center,
-                    end = Offset(center.x, center.y - rayLen),
-                    strokeWidth = 26f,
-                    cap = StrokeCap.Round
-                )
+                        end = Offset(center.x, center.y - rayLen),
+                        strokeWidth = 26f,
+                        cap = StrokeCap.Round
+                    )
+                }
             }
         }
     }

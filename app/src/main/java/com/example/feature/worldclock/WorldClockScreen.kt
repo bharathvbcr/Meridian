@@ -1,8 +1,11 @@
 package com.example.feature.worldclock
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.draw.rotate
@@ -74,7 +77,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import com.example.core.data.Person
 import com.example.feature.now.AddContactToZoneDialog
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -94,11 +96,13 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.text.style.TextAlign
+import com.example.core.designsystem.EmptyStateCard
 import com.example.core.designsystem.ExpressiveShapes
 import com.example.core.designsystem.GlassBottomSheet
 import com.example.core.designsystem.GlassCard
 import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.MeridianWordmark
+import com.example.core.designsystem.daylightGlowBehind
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.transparentCardColors
 import dev.chrisbanes.haze.HazeState
@@ -120,14 +124,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.MainViewModel
 import com.example.core.data.SavedZone
 import com.example.core.data.ZoneAnchorRole
 import com.example.core.data.isNowAnchor
+import com.example.core.designsystem.LocalTabBarInsetHeight
 import com.example.core.designsystem.Motion
+import com.example.core.designsystem.reportBarScroll
 import com.example.core.designsystem.rememberIs24Hour
 import com.example.core.time.SolarMath
 import com.example.core.time.TimeFormats
@@ -147,9 +157,14 @@ private fun safeZoneId(id: String): ZoneId =
 fun WorldClockScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier,
-    hazeState: dev.chrisbanes.haze.HazeState = remember { dev.chrisbanes.haze.HazeState() }
+    hazeState: dev.chrisbanes.haze.HazeState = remember { dev.chrisbanes.haze.HazeState() },
+    openCityPickerOnLaunch: Boolean = false,
+    onCityPickerLaunchConsumed: () -> Unit = {},
 ) {
     val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
+    val homeLocation by viewModel.homeLocation.collectAsStateWithLifecycle()
+    // Pick up a fresher cached fix so the home pin tracks the user across sessions.
+    LaunchedEffect(Unit) { viewModel.refreshDeviceCoordinate() }
     val scrubInstant by viewModel.scrubInstant.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val people by viewModel.people.collectAsStateWithLifecycle()
@@ -181,6 +196,13 @@ fun WorldClockScreen(
     // input field sits cleanly above the keyboard, which auto-opens when the sheet appears.
     var showCityPicker by remember { mutableStateOf(false) }
 
+    LaunchedEffect(openCityPickerOnLaunch) {
+        if (openCityPickerOnLaunch) {
+            showCityPicker = true
+            onCityPickerLaunchConsumed()
+        }
+    }
+
     val baseInstant = scrubInstant ?: ZonedDateTime.now().toInstant()
     val orphanContactGroups = remember(people, savedZones) {
         unassignedContactGroups(people, savedZones)
@@ -209,9 +231,10 @@ fun WorldClockScreen(
     // Wide screens (≥600dp) use a side nav rail instead of the bottom bar (and show no
     // bottom-pinned next-event pill), so the dial sits lower and width-capped there.
     val wideLayout = LocalConfiguration.current.screenWidthDp >= 600
+    val tabBarInset = LocalTabBarInsetHeight.current
 
     val dialBottomPadding by animateDpAsState(
-        targetValue = if (wideLayout) 24.dp else 96.dp,
+        targetValue = if (wideLayout) 24.dp else tabBarInset,
         animationSpec = Motion.smooth(),
         label = "dialBottomPadding"
     )
@@ -223,6 +246,7 @@ fun WorldClockScreen(
             .fillMaxSize()
             .statusBarsPadding()
             .imePadding()
+            .reportBarScroll()
             .pointerInput(listState) {
                 // Distinguishes a reorder from a "hold still" gesture: any real drag flips this true,
                 // so on release we either commit the new order or — if it never moved — open the
@@ -334,6 +358,7 @@ fun WorldClockScreen(
                 zones = savedZones,
                 mapStyle = settings.mapStyle,
                 hazeState = hazeState,
+                homeLocation = homeLocation,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
@@ -365,8 +390,8 @@ fun WorldClockScreen(
                             )
                             Text(
                                 "Search any city, airport, or time zone to pin its time.",
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                fontSize = 12.sp
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         }
                     }
@@ -390,59 +415,18 @@ fun WorldClockScreen(
         // List Header & Empty State
         if (savedZones.isEmpty()) {
             item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(48.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Public,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        text = "No pinned locations yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Search and add cities above to track their times across the globe.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                EmptyStateCard(
+                    icon = Icons.Default.Public,
+                    title = "No pinned locations yet",
+                    message = "Search and add cities to track their times across the globe.",
+                    hazeState = hazeState,
+                    actionLabel = "Search cities",
+                    onAction = { showCityPicker = true },
+                )
             }
         } else {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Public,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Pinned Locations",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(end = 12.dp)
-                    )
-                    androidx.compose.material3.HorizontalDivider(
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+                SectionHeader(icon = Icons.Default.Public, label = "Pinned Locations")
             }
         }
 
@@ -470,7 +454,10 @@ fun WorldClockScreen(
                     onDelete = { viewModel.removeZone(anchorZone.id) },
                     workStartHour = settings.defaultWorkStartHour,
                     workEndHour = settings.defaultWorkEndHour,
-                    contacts = contactsForZone(anchorZone, people, savedZones),
+                    // O(people × zones) scan — memoized so it doesn't re-run per scrub frame.
+                    contacts = remember(anchorZone.id, people, savedZones) {
+                        contactsForZone(anchorZone, people, savedZones)
+                    },
                     onAddContact = { name ->
                         viewModel.addPerson(
                             name = name,
@@ -508,7 +495,10 @@ fun WorldClockScreen(
                 onDelete = { viewModel.removeZone(zone.id) },
                 workStartHour = settings.defaultWorkStartHour,
                 workEndHour = settings.defaultWorkEndHour,
-                contacts = contactsForZone(zone, people, savedZones),
+                // O(people × zones) scan — memoized so it doesn't re-run per scrub frame.
+                contacts = remember(zone.id, people, savedZones) {
+                    contactsForZone(zone, people, savedZones)
+                },
                 onAddContact = { name ->
                     viewModel.addPerson(
                         name = name,
@@ -534,29 +524,7 @@ fun WorldClockScreen(
 
         if (orphanContactGroups.isNotEmpty()) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Group,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "Contact locations",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.padding(end = 12.dp),
-                    )
-                    HorizontalDivider(
-                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                SectionHeader(icon = Icons.Default.Group, label = "Contact locations")
             }
             orphanContactGroups.forEach { group ->
                 item(key = "contact-${group.zoneId}-${group.displayName}") {
@@ -594,7 +562,7 @@ fun WorldClockScreen(
 
         item {
             // Leave room so the last rows clear the pinned time dial and the nav bar.
-            Spacer(Modifier.height(340.dp))
+            Spacer(Modifier.height(tabBarInset + 244.dp))
         }
     }
 
@@ -690,8 +658,8 @@ private fun WorldCityPickerSheet(
             )
             Text(
                 text = "Search any city, airport, or time zone. Resolved on-device.",
+                style = MaterialTheme.typography.labelMedium,
                 color = onSurface.copy(alpha = 0.6f),
-                fontSize = 12.sp,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
@@ -864,11 +832,14 @@ fun ZoneComparisonRow(
         val coord = ZoneCoordinates.coordinateFor(zoneId, time.toInstant())
         SolarMath.isDaylight(coord.latitude, coord.longitude, time.toInstant())
     }
-
-    // Pre-compute glow brush once per isDaylight change; drawBehind runs outside composable scope.
-    val daylightGlow = GlassDefaults.daylightGlow
-    val nightGlow = GlassDefaults.nightGlow
-    val glowColor = if (isDaylight) daylightGlow.copy(alpha = 0.22f) else nightGlow.copy(alpha = 0.22f)
+    // Cross-fade the day/night accent (sun ↔ moon tint) as the scrubber sweeps a zone across the
+    // terminator, so the row's color eases in sync with the map's day/night sweep instead of
+    // snapping. Spring-only motion per the north-star; the glyph itself still swaps instantly.
+    val daylightAccent by animateColorAsState(
+        targetValue = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
+        animationSpec = Motion.smooth(),
+        label = "zoneDaylightAccent"
+    )
 
     var expanded by remember { mutableStateOf(false) }
     var showAddContactDialog by remember { mutableStateOf(false) }
@@ -898,6 +869,13 @@ fun ZoneComparisonRow(
                     onClick = { expanded = !expanded },
                     onLongClick = null
                 )
+                // The whole card owns expand/collapse, so announce that state here (the chevron is
+                // decorative). TalkBack reads "Button, Expanded/Collapsed" and activation actually
+                // toggles the row.
+                .semantics {
+                    role = Role.Button
+                    stateDescription = if (expanded) "Expanded" else "Collapsed"
+                }
                 // Lightweight glass (no per-row backdrop blur): this row repeats once per saved zone
                 // inside a scrolling list, so a full Haze blur here would multiply across every visible
                 // row each frame. The translucent tint over the blurred backdrop keeps the glass look
@@ -907,22 +885,18 @@ fun ZoneComparisonRow(
                     tintColor = containerColor,
                     blur = false
                 )
-                .drawBehind {
-                    drawCircle(
-                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                            colors = listOf(glowColor, Color.Transparent),
-                            center = Offset(size.width * 0.85f, size.height * 0.15f),
-                            radius = size.width * 0.6f
-                        ),
-                        center = Offset(size.width * 0.85f, size.height * 0.15f),
-                        radius = size.width * 0.6f
-                    )
-                },
+                .daylightGlowBehind(isDaylight),
             colors = transparentCardColors()
         ) {
         Column(modifier = Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
+            // Merge the zone name, day/night, working-hours, UTC offset and sun times into a single
+            // TalkBack node so they read as one location summary instead of ~6 separate swipes.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics(mergeDescendants = true) {}
+            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = zoneName,
@@ -943,7 +917,9 @@ fun ZoneComparisonRow(
                     Icon(
                         imageVector = if (isDaylight) Icons.Default.WbSunny else Icons.Default.NightsStay,
                         contentDescription = if (isDaylight) "Daytime" else "Nighttime",
-                        tint = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
+                        // Cross-faded accent (see daylightAccent above) so the tint eases across the
+                        // terminator; the glyph swap stays instant.
+                        tint = daylightAccent,
                         modifier = Modifier.size(16.dp)
                     )
                     if (isHome) {
@@ -967,12 +943,22 @@ fun ZoneComparisonRow(
                     val o = time.offset.toString()
                     if (o == "Z") "UTC±0" else "UTC$o"
                 }
-                Text(
-                    text = utcOffset,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    fontSize = 10.sp
-                )
+                Spacer(Modifier.height(4.dp))
+                // Group this meta datum with the other chips below the zone name by giving it the
+                // same secondaryContainer pill treatment. labelMedium (12) honors fontScale instead
+                // of the previous raw 10sp.
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))
+                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = utcOffset,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.9f)
+                    )
+                }
                 val favoriteContacts = contacts.filter { it.isFavorite }
                 if (favoriteContacts.isNotEmpty()) {
                     Spacer(Modifier.height(4.dp))
@@ -996,9 +982,8 @@ fun ZoneComparisonRow(
                                     )
                                     Text(
                                         text = person.name,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        fontSize = 10.sp
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
                                     )
                                 }
                             }
@@ -1009,7 +994,12 @@ fun ZoneComparisonRow(
             }
 
             Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    // Space the number away from the chevron/overflow so the large primary time
+                    // stays the clear focal point instead of crowding the two affordances.
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     Text(
                         text = time.format(timeFormatter),
                         style = MaterialTheme.typography.headlineMedium,
@@ -1023,9 +1013,14 @@ fun ZoneComparisonRow(
                     )
                     Icon(
                         imageVector = Icons.Default.ExpandMore,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        // Decorative: expand/collapse is owned by the Card's semantics above, so this
+                        // glyph must not announce a phantom actionable control to TalkBack.
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(20.dp).rotate(chevronRotation)
+                        modifier = Modifier
+                            .padding(start = 4.dp)
+                            .size(20.dp)
+                            .rotate(chevronRotation)
                     )
                     IconButton(onClick = {
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1124,7 +1119,9 @@ fun ZoneComparisonRow(
                     Text(
                         text = "No starred contacts — tap Add or star someone to include them in Plan",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        // Lifted to 0.6f to clear WCAG-AA contrast on the #0F172A surface, matching
+                        // the other secondary text in this file.
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                         modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
                     )
                 } else {
@@ -1137,7 +1134,7 @@ fun ZoneComparisonRow(
                                 imageVector = Icons.Filled.Person,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                             Spacer(Modifier.width(6.dp))
                             Text(
@@ -1265,6 +1262,7 @@ private fun WorldVisualization(
     zones: List<SavedZone>,
     mapStyle: com.example.core.data.MapStyle,
     hazeState: dev.chrisbanes.haze.HazeState,
+    homeLocation: com.example.core.time.GeoPoint? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -1315,7 +1313,11 @@ private fun WorldVisualization(
             targetState = showGlobe,
             label = "MapGlobeTransition",
             transitionSpec = {
-                fadeIn() togetherWith fadeOut()
+                // Spring-only motion (north-star): cross-fade on Motion.smooth() and let the incoming
+                // view scale up subtly with Motion.bouncy() so the globe "emerges" — mirroring the
+                // scrubber/chevron spring animations elsewhere in this screen.
+                (fadeIn(Motion.smooth()) + scaleIn(Motion.bouncy(), initialScale = 0.94f)) togetherWith
+                    (fadeOut(Motion.smooth()) + scaleOut(Motion.smooth(), targetScale = 0.94f))
             }
         ) { isGlobe ->
             if (isGlobe) {
@@ -1329,11 +1331,55 @@ private fun WorldVisualization(
                     pinNightColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                     atmosphereColor = MaterialTheme.colorScheme.primary,
                     style = mapStyle,
+                    homeLocation = homeLocation,
                 )
             } else {
-                DayNightMap(instant = instant, zones = zones, style = mapStyle, hazeState = hazeState)
+                DayNightMap(
+                    instant = instant,
+                    zones = zones,
+                    style = mapStyle,
+                    hazeState = hazeState,
+                    homeLocation = homeLocation,
+                )
             }
         }
+    }
+}
+
+// Shared section-header row (icon + titleLarge label + weighted divider) so the "Pinned Locations"
+// and "Contact locations" headers stay in lockstep on spacing and typography. Locked to the
+// north-star rhythm: horizontal 24dp / vertical 12dp, end-padding 12dp, onBackground 0.12f divider.
+@Composable
+private fun SectionHeader(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .semantics(mergeDescendants = true) { heading() },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(end = 12.dp)
+        )
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
+            modifier = Modifier.weight(1f)
+        )
     }
 }
 
@@ -1358,9 +1404,9 @@ private fun SunTimesLine(
     }
     Text(
         text = label,
-        style = MaterialTheme.typography.bodySmall,
+        // labelMedium (12) instead of raw 10sp so the sun-times line scales with Dynamic Type.
+        style = MaterialTheme.typography.labelMedium,
         color = textColor.copy(alpha = 0.6f),
-        fontSize = 10.sp,
         modifier = Modifier.padding(top = 2.dp)
     )
 }

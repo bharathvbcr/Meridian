@@ -8,16 +8,27 @@ extension Color {
         var int: UInt64 = 0
         Scanner(string: hex).scanHexInt64(&int)
 
-        let r, g, b: Double
+        let r, g, b, a: Double
         switch hex.count {
         case 6:
+            // RRGGBB — opaque.
             r = Double((int >> 16) & 0xFF) / 255.0
             g = Double((int >> 8)  & 0xFF) / 255.0
             b = Double( int        & 0xFF) / 255.0
+            a = 1.0
+        case 8:
+            // RRGGBBAA — trailing alpha byte.
+            r = Double((int >> 24) & 0xFF) / 255.0
+            g = Double((int >> 16) & 0xFF) / 255.0
+            b = Double((int >> 8)  & 0xFF) / 255.0
+            a = Double( int        & 0xFF) / 255.0
         default:
-            r = 0; g = 0; b = 0
+            // Fail loudly in DEBUG so a mistyped token (e.g. a 3- or 4-digit shorthand)
+            // is caught in development instead of silently shipping an opaque black surface.
+            assertionFailure("Color(hex:) expects a 6-digit RRGGBB or 8-digit RRGGBBAA string; got \"\(hex)\" (\(hex.count) chars).")
+            r = 0; g = 0; b = 0; a = 1.0
         }
-        self.init(red: r, green: g, blue: b)
+        self.init(red: r, green: g, blue: b, opacity: a)
     }
 }
 
@@ -73,6 +84,17 @@ enum MeridianColors {
 
     /// #4CAF50 — success / available / overlap-score positive
     static let positive = Color(hex: "4CAF50")
+
+    // MARK: Error (M3 dark error tones; Android: colorScheme.error / errorContainer)
+
+    /// Error foreground — icons and emphasized error text.
+    static let error = Color(hex: "FFB4AB")
+
+    /// Error surface — the assistant's failed-turn bubble background.
+    static let errorContainer = Color(hex: "93000A")
+
+    /// Text on `errorContainer`.
+    static let onErrorContainer = Color(hex: "FFDAD6")
 
     /// Frosted-glass card tint: primary at 6 % opacity
     static let cardTint = Color(hex: "60CDFF").opacity(0.06)
@@ -189,52 +211,117 @@ enum MeridianRadius: CGFloat {
 
 // MARK: - Meridian Typography
 
+// Each token keeps its original base point-size and weight (the source of truth for the
+// default "Large" content-size category) but is resolved through `UIFontMetrics` so the
+// rendered size scales with the user's Dynamic Type setting. The `relativeTo:` anchor is
+// the closest standard text style, which controls how aggressively the size scales at the
+// accessibility steps. See `Font.scaledSystem(size:weight:relativeTo:)` below.
 extension Font {
     /// 44 pt Black — hero display text
     static var displayLarge: Font {
-        .system(size: 44, weight: .black)
+        .scaledSystem(size: 44, weight: .black, relativeTo: .largeTitle)
     }
 
     /// 36 pt Heavy — large display text
     static var displayMedium: Font {
-        .system(size: 36, weight: .heavy)
+        .scaledSystem(size: 36, weight: .heavy, relativeTo: .largeTitle)
     }
 
     /// 24 pt Bold — screen / section headlines
     static var headlineLarge: Font {
-        .system(size: 24, weight: .bold)
+        .scaledSystem(size: 24, weight: .bold, relativeTo: .title2)
     }
 
     /// 20 pt SemiBold — secondary headlines
     static var headlineMedium: Font {
-        .system(size: 20, weight: .semibold)
+        .scaledSystem(size: 20, weight: .semibold, relativeTo: .title3)
     }
 
     /// 22 pt Bold — card / modal titles
     static var titleLarge: Font {
-        .system(size: 22, weight: .bold)
+        .scaledSystem(size: 22, weight: .bold, relativeTo: .title2)
     }
 
     /// 16 pt SemiBold — row / list titles
     static var titleMedium: Font {
-        .system(size: 16, weight: .semibold)
+        .scaledSystem(size: 16, weight: .semibold, relativeTo: .body)
     }
 
     /// 16 pt Regular — primary body copy
     static var bodyLarge: Font {
-        .system(size: 16)
+        .scaledSystem(size: 16, weight: .regular, relativeTo: .body)
     }
 
     /// 14 pt Regular — secondary body copy
     static var bodyMedium: Font {
-        .system(size: 14)
+        .scaledSystem(size: 14, weight: .regular, relativeTo: .subheadline)
+    }
+
+    /// 13 pt Regular — dense secondary copy (captions, metadata rows)
+    static var bodySmall: Font {
+        .scaledSystem(size: 13, weight: .regular, relativeTo: .footnote)
     }
 
     /// 12 pt SemiBold — labels, tags, badges
     static var labelMedium: Font {
-        .system(size: 12, weight: .semibold)
+        .scaledSystem(size: 12, weight: .semibold, relativeTo: .caption)
+    }
+
+    /// 11 pt SemiBold — smallest label rung (compact badges/pills)
+    static var labelSmall: Font {
+        .scaledSystem(size: 11, weight: .semibold, relativeTo: .caption2)
     }
 }
+
+private extension Font {
+    /// Builds a system font at an exact base point size that genuinely scales with the
+    /// user's Dynamic Type setting, anchored to the closest standard text style.
+    ///
+    /// Chaining a no-op onto `.system(size:)` (as an earlier revision did) produced a
+    /// fixed, non-scaling font. This instead resolves the size through `UIFontMetrics`
+    /// so a 44 pt token becomes ~52 pt at the "Large" accessibility step, ~38 pt at the
+    /// smallest, etc. — the numeric base size stays the source of truth for the default
+    /// (Large) content-size category, and everything above/below scales proportionally.
+    ///
+    /// On platforms without UIKit (e.g. macOS previews) it degrades to the fixed-size
+    /// system font, which keeps the tokens usable without crashing.
+    static func scaledSystem(
+        size: CGFloat,
+        weight: Font.Weight,
+        relativeTo textStyle: Font.TextStyle
+    ) -> Font {
+        #if canImport(UIKit)
+        let metrics = UIFontMetrics(forTextStyle: textStyle.uiTextStyle)
+        let scaledSize = metrics.scaledValue(for: size)
+        return .system(size: scaledSize, weight: weight, design: .default)
+        #else
+        return .system(size: size, weight: weight, design: .default)
+        #endif
+    }
+}
+
+#if canImport(UIKit)
+private extension Font.TextStyle {
+    /// Maps a SwiftUI text style to its UIKit counterpart so `UIFontMetrics` can scale
+    /// against the matching category. Falls back to `.body` for any unmapped style.
+    var uiTextStyle: UIFont.TextStyle {
+        switch self {
+        case .largeTitle: return .largeTitle
+        case .title:      return .title1
+        case .title2:     return .title2
+        case .title3:     return .title3
+        case .headline:   return .headline
+        case .subheadline: return .subheadline
+        case .body:       return .body
+        case .callout:    return .callout
+        case .footnote:   return .footnote
+        case .caption:    return .caption1
+        case .caption2:   return .caption2
+        @unknown default: return .body
+        }
+    }
+}
+#endif
 
 // MARK: - Meridian Spacing
 

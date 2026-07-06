@@ -462,6 +462,28 @@ class MeridianAiToolsTest {
     }
 
     @Test
+    fun `groundingFacts treats a plain what's-the-time question as current time not conversion`() = runBlocking {
+        val facts = tools.groundingFacts(
+            prompt = "What's the time in Tokyo?",
+            homeZoneId = "America/Chicago",
+            savedZones = emptyList(),
+        )
+        // "what's" must not trigger CONVERT without a clock time — otherwise this current-time
+        // query gets a bogus conversion hint and (CONVERT-without-"now") is cached stale.
+        assertTrue("expected current-time intent in:\n$facts", facts.contains("QUERY INTENT: current time lookup"))
+    }
+
+    @Test
+    fun `groundingFacts keeps a clocked what's query as a conversion`() = runBlocking {
+        val facts = tools.groundingFacts(
+            prompt = "What's 3 PM in London?",
+            homeZoneId = "America/Chicago",
+            savedZones = emptyList(),
+        )
+        assertTrue("expected conversion intent in:\n$facts", facts.contains("QUERY INTENT: time conversion"))
+    }
+
+    @Test
     fun `groundingFacts precomputes meeting slots for people only`() = runBlocking {
         val facts = tools.groundingFacts(
             prompt = "best time to call Priya and Emma tomorrow?",

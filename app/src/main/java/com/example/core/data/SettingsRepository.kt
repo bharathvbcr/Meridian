@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.example.core.ai.AiEngine
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -78,6 +79,8 @@ data class MeridianSettings(
     val homeCountryEnabled: Boolean = false,
     /** Set to true after the user completes or skips the first-launch onboarding walkthrough. */
     val onboardingComplete: Boolean = false,
+    /** Which inference engine the assistant prefers (on-device first vs always cloud). */
+    val aiEngine: AiEngine = AiEngine.ON_DEVICE,
 )
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "meridian_settings")
@@ -103,6 +106,7 @@ class SettingsRepository(private val context: Context) {
         val MAP_STYLE = stringPreferencesKey("map_style")
         val HOME_COUNTRY_ENABLED = booleanPreferencesKey("home_country_enabled")
         val ONBOARDING_COMPLETE = booleanPreferencesKey("onboarding_complete")
+        val AI_ENGINE = stringPreferencesKey("ai_engine")
     }
 
     val settings: Flow<MeridianSettings> = context.settingsDataStore.data.map { prefs ->
@@ -120,6 +124,7 @@ class SettingsRepository(private val context: Context) {
             mapStyle = prefs[Keys.MAP_STYLE]?.let(::parseMapStyle) ?: MapStyle.VECTOR,
             homeCountryEnabled = prefs[Keys.HOME_COUNTRY_ENABLED] ?: false,
             onboardingComplete = prefs[Keys.ONBOARDING_COMPLETE] ?: false,
+            aiEngine = prefs[Keys.AI_ENGINE]?.let(::parseAiEngine) ?: AiEngine.ON_DEVICE,
         )
     }
 
@@ -177,11 +182,18 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.ONBOARDING_COMPLETE] = complete }
     }
 
+    suspend fun setAiEngine(engine: AiEngine) {
+        context.settingsDataStore.edit { it[Keys.AI_ENGINE] = engine.name }
+    }
+
     private fun parseHourCycle(raw: String): HourCycle =
         runCatching { HourCycle.valueOf(raw) }.getOrDefault(HourCycle.SYSTEM)
 
     private fun parseMapStyle(raw: String): MapStyle =
         runCatching { MapStyle.valueOf(raw) }.getOrDefault(MapStyle.VECTOR)
+
+    private fun parseAiEngine(raw: String): AiEngine =
+        runCatching { AiEngine.valueOf(raw) }.getOrDefault(AiEngine.ON_DEVICE)
 
     private fun parseGlassOpacity(prefs: Preferences): Int {
         prefs[Keys.GLASS_OPACITY_PERCENT]?.let {

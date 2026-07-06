@@ -21,31 +21,36 @@ struct WorldCityPickerSheet: View {
     let use24Hour: Bool
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var query: String = ""
     @State private var results: [ZoneMatch] = []
+    /// True while the debounce + async `searchTimeZones` is in flight for a non-empty query,
+    /// so the results section can show a searching state instead of flashing "No locations found".
+    @State private var isSearching: Bool = false
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         GlassBottomSheet {
             VStack(alignment: .leading, spacing: 0) {
                 Text("Add worldwide cities")
-                    .font(.system(size: 16, weight: .bold))   // titleMedium + Bold
+                    .font(.titleMedium.weight(.bold))
                     .foregroundStyle(MeridianColors.onSurface)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, MeridianSpacing.xs.rawValue)
+                    .accessibilityAddTraits(.isHeader)
 
                 Text("Search any city, airport, or time zone. Resolved on-device.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
-                    .padding(.bottom, 12)
+                    .font(.labelMedium.weight(.regular))
+                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    .padding(.bottom, MeridianSpacing.md.rawValue)
 
                 searchField
-                    .padding(.bottom, 12)
+                    .padding(.bottom, MeridianSpacing.md.rawValue)
 
                 resultsSection
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.horizontal, MeridianSpacing.lg.rawValue)
+            .padding(.bottom, MeridianSpacing.lg.rawValue)
         }
         .presentationDetents([.large])
         // 120 ms debounce: any query change restarts this task; the sleep is cancelled before
@@ -54,13 +59,20 @@ struct WorldCityPickerSheet: View {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 results = []
+                isSearching = false
                 return
             }
+            // Enter the searching state immediately so a non-empty query never renders the
+            // "No locations found" branch before the async lookup has had a chance to run.
+            isSearching = true
             try? await Task.sleep(for: .milliseconds(120))
             if Task.isCancelled { return }
             let found = await viewModel.searchTimeZones(query)
             if Task.isCancelled { return }
-            results = found
+            withAnimation(reduceMotion ? nil : Motion.snappy()) {
+                results = found
+                isSearching = false
+            }
         }
         .task {
             // Autofocus shortly after present (Android delays 180 ms before requesting focus).
@@ -95,22 +107,29 @@ struct WorldCityPickerSheet: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
+                .accessibilityAddTraits(.isButton)
                 .sensoryFeedback(.impact(weight: .light), trigger: query)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.leading, MeridianSpacing.md.rawValue)
+        // Trailing padding is smaller so the clear button's own 44pt frame supplies the inset.
+        .padding(.trailing, query.isEmpty ? MeridianSpacing.md.rawValue : MeridianSpacing.xs.rawValue)
+        .padding(.vertical, query.isEmpty ? MeridianSpacing.md.rawValue : 0)
+        .frame(minHeight: 44)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                 .strokeBorder(
                     searchFocused ? MeridianColors.primary
                                   : MeridianColors.onSurfaceVariant.opacity(0.5),
                     lineWidth: 1
                 )
         }
+        .animation(reduceMotion ? nil : Motion.snappy(), value: searchFocused)
     }
 
     // MARK: - Results
@@ -118,16 +137,7 @@ struct WorldCityPickerSheet: View {
     @ViewBuilder
     private var resultsSection: some View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty && results.isEmpty {
-            HStack {
-                Spacer()
-                Text("No locations found")
-                    .font(.system(size: 14))
-                    .foregroundStyle(MeridianColors.onSurfaceVariant)
-                Spacer()
-            }
-            .padding(.vertical, 24)
-        } else if !results.isEmpty {
+        if !results.isEmpty {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
@@ -136,12 +146,41 @@ struct WorldCityPickerSheet: View {
                             Rectangle()
                                 .fill(MeridianColors.onSurface.opacity(0.08))
                                 .frame(height: 1)
-                                .padding(.horizontal, 8)
+                                .padding(.horizontal, MeridianSpacing.sm.rawValue)
                         }
                     }
                 }
             }
             .frame(maxHeight: 360)
+        } else if !trimmed.isEmpty && isSearching {
+            // In-flight: show a searching indicator so a cleared-but-pending query never flashes
+            // the false-negative "No locations found" branch below.
+            HStack(spacing: MeridianSpacing.sm.rawValue) {
+                Spacer()
+                ProgressView()
+                    .tint(MeridianColors.primary)
+                Text("Searching…")
+                    .font(.bodyMedium)
+                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                Spacer()
+            }
+            .padding(.vertical, MeridianSpacing.xxl.rawValue)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Searching for locations")
+        } else if !trimmed.isEmpty {
+            HStack(spacing: MeridianSpacing.md.rawValue) {
+                Spacer()
+                Image(systemName: "mappin.slash")
+                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    .accessibilityHidden(true)
+                Text("No locations found")
+                    .font(.bodyMedium)
+                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                Spacer()
+            }
+            .padding(.vertical, MeridianSpacing.xxl.rawValue)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("No locations found for \(trimmed)")
         }
     }
 
@@ -155,34 +194,40 @@ struct WorldCityPickerSheet: View {
             viewModel.addZone(from: result)
             query = ""
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: MeridianSpacing.md.rawValue) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(result.displayName)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.bodyLarge.weight(.medium))
                         .foregroundStyle(MeridianColors.onSurface)
                     Text(result.zoneId)
-                        .font(.system(size: 12))
+                        .font(.labelMedium.weight(.regular))
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: MeridianSpacing.sm.rawValue)
 
                 Text(localTime)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.bodyMedium.weight(.semibold))
                     .foregroundStyle(MeridianColors.primary)
                     .monospacedDigit()
 
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.bodyLarge.weight(.semibold))
                     .foregroundStyle(MeridianColors.primary)
-                    .accessibilityLabel("Add \(result.displayName)")
+                    .accessibilityHidden(true)
             }
             .contentShape(Rectangle())
-            .padding(.horizontal, 8)
-            .padding(.vertical, 12)
+            .padding(.horizontal, MeridianSpacing.sm.rawValue)
+            .padding(.vertical, MeridianSpacing.md.rawValue)
+            .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous))
+        // One combined VoiceOver element for the whole tappable row instead of loose sub-elements.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(result.displayName), \(localTime) local")
+        .accessibilityHint("Adds this location")
+        .accessibilityAddTraits(.isButton)
         .sensoryFeedback(.impact(weight: .medium), trigger: result.id)
     }
 }

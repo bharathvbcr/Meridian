@@ -13,18 +13,20 @@
 
 import SwiftUI
 
-// MARK: - Local design tokens
-
-private extension Color {
-    static let settingsPrimary      = Color(hex: "#60CDFF")
-    static let settingsOnSurface    = Color(hex: "#F1F5F9")
-    static let settingsOnSurfaceVar = Color(hex: "#94A3B8")
-}
-
 // MARK: - RemindersCard
 
 struct RemindersCard: View {
+    /// Which of the two logical cards to render. Android splits these into separate
+    /// collapsible sections (REMINDERS / WORK_HOURS); `.both` keeps the combined
+    /// rendering for any caller that wants the original stacked layout.
+    enum Part {
+        case reminders
+        case workHours
+        case both
+    }
+
     @Bindable var viewModel: MainViewModel
+    var part: Part = .both
 
     /// Lead-time options in minutes. The first entry is the disable sentinel: `-1`
     /// matches Android's "Disabled" option (the scheduler's `guard leadMinutes >= 0`
@@ -41,9 +43,16 @@ struct RemindersCard: View {
     ]
 
     var body: some View {
-        VStack(spacing: 16) {
+        switch part {
+        case .reminders:
             remindersSection
+        case .workHours:
             workHoursSection
+        case .both:
+            VStack(spacing: 16) {
+                remindersSection
+                workHoursSection
+            }
         }
     }
 
@@ -54,13 +63,14 @@ struct RemindersCard: View {
             header(icon: "bell.badge", title: "Alarm Lead Time")
 
             Text("Adjust how many minutes before an event the reminder notification fires.")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.settingsOnSurfaceVar)
-                .padding(.top, 4)
-                .padding(.bottom, 12)
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, MeridianSpacing.xs.rawValue)
+                .padding(.bottom, MeridianSpacing.md.rawValue)
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
                     ForEach(leadOptions, id: \.minutes) { option in
                         MeridianChip(
                             label: option.label,
@@ -72,7 +82,26 @@ struct RemindersCard: View {
                 }
                 .padding(.vertical, 2)
             }
+
+            Text(reminderLeadSummary)
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.onSurfaceVariant)
+                .padding(.top, MeridianSpacing.sm.rawValue)
+                .contentTransition(.opacity)
+                .accessibilityLabel(reminderLeadSummary)
         }
+        .accessibilityElement(children: .contain)
+    }
+
+    /// Textual echo of the active lead-time so "Off" vs a minute value is unambiguous
+    /// (mirrors the summary-line pattern used by `AiEngineCard`).
+    private var reminderLeadSummary: String {
+        let minutes = viewModel.settings.reminderLeadMinutes
+        guard minutes >= 0 else { return "Reminders off" }
+        if let match = leadOptions.first(where: { $0.minutes == minutes }) {
+            return "Fires \(match.label) before"
+        }
+        return "Fires \(minutes) min before"
     }
 
     // MARK: Work hours
@@ -82,12 +111,13 @@ struct RemindersCard: View {
             header(icon: "briefcase", title: "Default Work Hours")
 
             Text("The standard business-hours window. New planner participants default to these values.")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.settingsOnSurfaceVar)
-                .padding(.top, 4)
-                .padding(.bottom, 12)
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, MeridianSpacing.xs.rawValue)
+                .padding(.bottom, MeridianSpacing.md.rawValue)
 
-            VStack(spacing: 14) {
+            VStack(spacing: MeridianSpacing.md.rawValue) {
                 WorkHourStepperRow(
                     label: "Work Start",
                     icon: "sunrise",
@@ -101,8 +131,9 @@ struct RemindersCard: View {
                 }
 
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(MeridianColors.onSurface.opacity(0.08))
                     .frame(height: 1)
+                    .accessibilityHidden(true)
 
                 WorkHourStepperRow(
                     label: "Work End",
@@ -121,14 +152,17 @@ struct RemindersCard: View {
 
     @ViewBuilder
     private func header(icon: String, title: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.settingsPrimary)
+                .font(.titleMedium)
+                .foregroundStyle(MeridianColors.primary)
+                .accessibilityHidden(true)
             Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color.settingsOnSurface)
+                .font(.titleMedium)
+                .foregroundStyle(MeridianColors.onSurface)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -143,6 +177,8 @@ struct WorkHourStepperRow: View {
     let hour: Int
     let onChange: (Int) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var formattedTime: String {
         let h = ((hour % 24) + 24) % 24
         let period = h < 12 ? "AM" : "PM"
@@ -150,51 +186,85 @@ struct WorkHourStepperRow: View {
         return "\(displayH):00 \(period)"
     }
 
+    private func decrement() {
+        guard hour > 0 else { return }
+        onChange(max(0, hour - 1))
+    }
+
+    private func increment() {
+        guard hour < 23 else { return }
+        onChange(min(23, hour + 1))
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: MeridianSpacing.md.rawValue) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.settingsPrimary)
+                .font(.bodyMedium.weight(.semibold))
+                .foregroundStyle(MeridianColors.primary)
                 .frame(width: 24)
+                .accessibilityHidden(true)
 
             Text(label)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Color.settingsOnSurface)
+                .font(.bodyLarge.weight(.semibold))
+                .foregroundStyle(MeridianColors.onSurface)
 
-            Spacer()
+            Spacer(minLength: MeridianSpacing.sm.rawValue)
 
             Text(formattedTime)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Color.settingsPrimary)
+                .font(.bodyMedium.weight(.semibold))
+                .foregroundStyle(MeridianColors.primary)
                 .monospacedDigit()
                 .frame(minWidth: 72, alignment: .trailing)
                 .contentTransition(.numericText())
 
-            stepButton(systemName: "minus") {
-                onChange(max(0, hour - 1))
+            stepButton(systemName: "minus", accessibilityLabel: "Decrease \(label)") {
+                decrement()
             }
             .disabled(hour <= 0)
 
-            stepButton(systemName: "plus") {
-                onChange(min(23, hour + 1))
+            stepButton(systemName: "plus", accessibilityLabel: "Increase \(label)") {
+                increment()
             }
             .disabled(hour >= 23)
         }
-        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: hour)
+        .animation(reduceMotion ? nil : Motion.snappy(), value: hour)
+        // Present the whole row as one native-stepper-like adjustable element so
+        // VoiceOver reads "<label>, <time>" and swipe up/down changes the hour.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityValue(formattedTime)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: increment()
+            case .decrement: decrement()
+            @unknown default: break
+            }
+        }
     }
 
     @ViewBuilder
-    private func stepButton(systemName: String, action: @escaping () -> Void) -> some View {
+    private func stepButton(
+        systemName: String,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Color.settingsPrimary)
+                .font(.labelMedium.weight(.bold))
+                .foregroundStyle(MeridianColors.primary)
                 .frame(width: 30, height: 30)
                 .background {
-                    Circle().fill(Color.settingsPrimary.opacity(0.12))
+                    Circle().fill(MeridianColors.primary.opacity(0.12))
                 }
+                // Keep the 30pt glass circle, but expand the tappable region to the
+                // 44pt minimum without enlarging the visual affordance.
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: hour)
+        .accessibilityLabel(accessibilityLabel)
+        // The parent row is the adjustable stepper; hide the raw +/- from VoiceOver.
+        .accessibilityHidden(true)
     }
 }

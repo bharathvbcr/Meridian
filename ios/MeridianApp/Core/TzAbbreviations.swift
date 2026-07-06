@@ -61,7 +61,7 @@ public enum TzAbbreviations {
 
     /// Ambiguous abbreviations disambiguated by a surrounding phrase. Order matters: first match wins.
     /// Each entry is a case-insensitive, whole-word-anchored regex → IANA id.
-    private static let phrases: [(Regex<Substring>, String)] = [
+    nonisolated(unsafe) private static let phrases: [(Regex<Substring>, String)] = [
         (try! Regex(#"(?i)\bchina\s+cst\b"#), "Asia/Shanghai"),
         (try! Regex(#"(?i)\bcn\s+cst\b"#), "Asia/Shanghai"),
         (try! Regex(#"(?i)\bus\s+cst\b"#), "America/Chicago"),

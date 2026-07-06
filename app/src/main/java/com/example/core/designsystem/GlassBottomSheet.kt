@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +24,7 @@ import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberTimePickerState
@@ -29,10 +32,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
 
+/**
+ * Radius token for the sheet's top corners. Mirrors [GlassDefaults.cardShape] (28.dp = the
+ * documented "large" radius) so the sheet chrome matches every glass card in the app.
+ */
 private val GlassSheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+
+/**
+ * Local mirror of Meridian's documented 4/8/12/16/20/24 spacing scale, kept private to this
+ * design-system file so the two platforms stay conceptually in parity without leaking new
+ * public surface. Prefer these over ad-hoc dp literals inside this file's components.
+ */
+private object GlassSheetSpacing {
+    val sm: Dp = 8.dp
+    val lg: Dp = 16.dp
+    val xxl: Dp = 24.dp
+}
 
 /**
  * Bottom sheet that slides up from the screen edge with frosted-glass chrome matching the rest
@@ -96,11 +117,11 @@ fun GlassFormBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 16.dp),
+                .padding(horizontal = GlassSheetSpacing.xxl)
+                .padding(bottom = GlassSheetSpacing.lg),
         ) {
             title()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(GlassSheetSpacing.sm))
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -108,10 +129,11 @@ fun GlassFormBottomSheet(
             ) {
                 content()
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(GlassSheetSpacing.lg))
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+                horizontalArrangement = Arrangement.spacedBy(GlassSheetSpacing.sm, Alignment.End),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 dismissButton()
                 confirmButton()
@@ -133,35 +155,29 @@ fun GlassDatePickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
+                .padding(bottom = GlassSheetSpacing.lg),
         ) {
             Text(
                 text = "Pick a date",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                // Expose the sheet title as a heading so TalkBack users can jump to it,
+                // matching how SectionHeader / GlassToolbar advertise their titles.
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 8.dp),
+                    .padding(horizontal = GlassSheetSpacing.xxl)
+                    .padding(bottom = GlassSheetSpacing.sm)
+                    .semantics { heading() },
             )
             DatePicker(
                 state = pickerState,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismissRequest) { Text("Cancel") }
-                TextButton(
-                    onClick = {
-                        pickerState.selectedDateMillis?.let(onConfirm)
-                    },
-                    enabled = pickerState.selectedDateMillis != null,
-                ) { Text("OK") }
-            }
+            SheetActions(
+                onDismissRequest = onDismissRequest,
+                onConfirm = { pickerState.selectedDateMillis?.let(onConfirm) },
+                confirmEnabled = pickerState.selectedDateMillis != null,
+            )
         }
     }
 }
@@ -185,31 +201,73 @@ fun GlassTimePickerSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 16.dp),
+                .padding(bottom = GlassSheetSpacing.lg),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = "Pick a time",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                // Expose the sheet title as a heading so TalkBack users can jump to it,
+                // matching how SectionHeader / GlassToolbar advertise their titles.
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 8.dp),
+                    .padding(horizontal = GlassSheetSpacing.xxl)
+                    .padding(bottom = GlassSheetSpacing.sm)
+                    .semantics { heading() },
             )
             TimePicker(
                 state = state,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = onDismissRequest) { Text("Cancel") }
-                TextButton(onClick = { onConfirm(state.hour, state.minute) }) { Text("OK") }
-            }
+            SheetActions(
+                onDismissRequest = onDismissRequest,
+                onConfirm = { onConfirm(state.hour, state.minute) },
+            )
+        }
+    }
+}
+
+/**
+ * Shared Cancel / confirm action row for the date & time picker sheets.
+ *
+ * The confirm ("OK") is the primary affirmative action, so it gets a filled [Button] tinted with
+ * [ColorScheme.primary] — mirroring EmptyStateCard's call-to-action — giving it clear visual
+ * priority over the neutral Cancel [TextButton]. Both buttons carry
+ * [minimumInteractiveComponentSize] so they honour the 48dp minimum touch target even though a
+ * bare TextButton is only 40dp tall.
+ */
+@Composable
+private fun SheetActions(
+    onDismissRequest: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+    confirmEnabled: Boolean = true,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = GlassSheetSpacing.xxl),
+        horizontalArrangement = Arrangement.spacedBy(GlassSheetSpacing.sm, Alignment.End),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TextButton(
+            onClick = onDismissRequest,
+            modifier = Modifier.minimumInteractiveComponentSize(),
+        ) {
+            Text("Cancel", style = MaterialTheme.typography.labelLarge)
+        }
+        Button(
+            onClick = onConfirm,
+            enabled = confirmEnabled,
+            modifier = Modifier.minimumInteractiveComponentSize(),
+            shape = MaterialTheme.shapes.large,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+            ),
+        ) {
+            Text("OK", style = MaterialTheme.typography.labelLarge)
         }
     }
 }

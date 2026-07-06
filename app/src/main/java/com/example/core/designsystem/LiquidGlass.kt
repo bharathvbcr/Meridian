@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Dp
@@ -103,6 +104,25 @@ object GlassDefaults {
         @Composable get() = scrubberCardTone.copy(
             alpha = ScrubberGlass.alphas(LocalGlassOpacity.current).cardTint
         )
+
+    /**
+     * Canonical hairline edge for every glass surface. Previously duplicated as the literal
+     * `Color.White.copy(alpha = 0.2f)` across [Modifier.liquidGlass], [Modifier.liquidGlassBackdrop],
+     * [LiquidGlassSurface] and `applyGlassEffect` — promoting it to a single token means the frosted
+     * edge treatment is tuned in one place, matching the north-star rule against duplicating a
+     * literal that should be a token. A soft white hairline reads as a lit glass rim over the
+     * celestial deep-space canvas.
+     */
+    val borderTint: Color = Color.White.copy(alpha = 0.2f)
+
+    /**
+     * Boundary outline for the reduced-transparency / opaque fallback. When the frosted depth cue is
+     * removed, a ~0.16-white hairline (the frosted [borderTint] dimmed further) is barely visible on
+     * a dark opaque surface and the card can read as edgeless. This theme-derived outline keeps a
+     * clear, WCAG-legible boundary in the accessibility fallback without hardcoding a literal.
+     */
+    val fallbackOutline: Color
+        @Composable get() = MaterialTheme.colorScheme.outline
 
     /** Unified corner radius for all standard glass cards/surfaces. */
     val cardShape: Shape = RoundedCornerShape(28.dp)
@@ -195,7 +215,7 @@ fun Modifier.liquidGlass(
     borderWidth: Dp = 0.5.dp,
     tintColor: Color = GlassDefaults.cardTint,
     opaqueFallbackColor: Color = MaterialTheme.colorScheme.surface,
-    borderColor: Color = Color.White.copy(alpha = 0.2f),
+    borderColor: Color = GlassDefaults.borderTint,
     distortion: Float = 0.05f,
     // Backdrop blur is the single most expensive thing this modifier does, and its cost is paid
     // *per surface, per frame*. Numerous, frequently-redrawn surfaces (e.g. every row of a
@@ -228,7 +248,7 @@ fun Modifier.liquidGlassBackdrop(
     borderWidth: Dp = 0.5.dp,
     tintColor: Color = GlassDefaults.cardTint,
     opaqueFallbackColor: Color = MaterialTheme.colorScheme.surface,
-    borderColor: Color = Color.White.copy(alpha = 0.2f),
+    borderColor: Color = GlassDefaults.borderTint,
     distortion: Float = 0.05f,
     frosted: Boolean = false
 ): Modifier = glassImpl(
@@ -257,10 +277,17 @@ private fun Modifier.glassImpl(
     val userReduceTransparency = LocalReduceTransparencyOverride.current
 
     if (systemReduceTransparency || userReduceTransparency || !glassEnabled) {
+        // With the frosted depth cue removed, a low-alpha white hairline (the default
+        // `borderTint` at ~0.2, even boosted to 0.8x) is barely visible on the dark opaque
+        // surface, so the card can read as edgeless. Composite the caller's border over a
+        // theme-derived, WCAG-legible [GlassDefaults.fallbackOutline] base: any intentional
+        // accent hue (e.g. the scrubber's primary tint) still shows on top, while faint white
+        // hairlines resolve to a clear, opaque boundary. See finding §a11y.
+        val accessibleOutline = borderColor.compositeOver(GlassDefaults.fallbackOutline)
         return this
             .clip(shape)
             .background(opaqueFallbackColor)
-            .border(borderWidth, borderColor.copy(alpha = 0.8f), shape)
+            .border(borderWidth, accessibleOutline, shape)
     }
 
     // Lightweight glass: translucent tint over the (already blurred) backdrop, no per-surface
@@ -346,7 +373,7 @@ fun LiquidGlassSurface(
     shape: Shape = GlassDefaults.cardShape,
     borderWidth: Dp = 0.5.dp,
     tintColor: Color = GlassDefaults.cardTint,
-    borderColor: Color = Color.White.copy(alpha = 0.2f),
+    borderColor: Color = GlassDefaults.borderTint,
     frosted: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {

@@ -38,8 +38,25 @@ enum MeridianTab: String, CaseIterable, Identifiable {
     }
 
     /// Accessibility label for the tab control.
+    ///
+    /// Retained for backward compatibility with any external caller. Prefer the
+    /// role-free `title` for the VoiceOver *label* on nav items (the `.isButton`
+    /// / `.isSelected` traits already convey the control's role, so appending the
+    /// word "tab" produces a redundant "Now tab, button" announcement).
     var accessibilityLabel: String {
         self == .ai ? "AI Assistant tab" : "\(title) tab"
+    }
+
+    /// VoiceOver label for a nav item — role-free so the button/selected trait is
+    /// not spoken twice. AI keeps its fuller name since "AI" alone is terse.
+    var navAccessibilityLabel: String {
+        self == .ai ? "AI Assistant" : title
+    }
+
+    /// VoiceOver hint announced after the label: explains that activating the
+    /// primary-navigation control switches screens.
+    var navAccessibilityHint: String {
+        "Switches to the \(self == .ai ? "AI Assistant" : title) screen"
     }
 
     /// Outline (inactive) SF Symbol name.
@@ -65,6 +82,169 @@ enum MeridianTab: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Shared nav metrics
+
+/// Sizing constants shared by the two bottom-bar item variants (`CompactNavItem`
+/// and `NavBarItem`) so they render the same tab-bar concept identically. Values
+/// are expressed against the design scale (spacing tokens, 44 pt touch target).
+private enum NavMetrics {
+    /// Bottom-bar icon point size. `CompactNavItem` (18) and `NavBarItem` (20)
+    /// previously diverged; unify on 20 so the active/inactive weight step reads
+    /// the same across both shells.
+    static let iconSize: CGFloat = 20
+    /// Center-slot / rail icon glyph size.
+    static let prominentIconSize: CGFloat = 20
+    /// Gap between icon and expanded label.
+    static let iconLabelGap = MeridianSpacing.xs.rawValue + 2   // 6
+    /// Horizontal padding when the label pill is expanded.
+    static let activeHPadding = MeridianSpacing.md.rawValue + 2  // 14
+    /// Horizontal padding when icon-only.
+    static let inactiveHPadding = MeridianSpacing.md.rawValue    // 12
+    /// Vertical padding for the item content.
+    static let vPadding = MeridianSpacing.sm.rawValue + 2        // 10
+    /// Minimum square touch target (Apple HIG ≥ 44 pt).
+    static let minTouchTarget: CGFloat = 44
+    /// Fixed square for the circular center/rail slots.
+    static let prominentSlot: CGFloat = 48
+    /// Weight step: inactive icons are regular, active icons semibold.
+    static func iconWeight(active: Bool) -> Font.Weight { active ? .semibold : .regular }
+}
+
+// MARK: - GlassCompactNavBar (iPhone shell — minimize-on-scroll)
+
+/// Floating glass pill used by `ContentView` on iPhone. Mirrors Android `GlassNavBar`:
+/// active tabs expand to show a label; `collapsed` hides labels while scrolling down.
+struct GlassCompactNavBar: View {
+    @Binding var selectedTab: MeridianTab
+    var collapsed: Bool = false
+
+    @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GlassEffectContainer(spacing: MeridianSpacing.xs.rawValue) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
+                ForEach(MeridianTab.displayOrder) { tab in
+                    if tab == .ai {
+                        AiNavButton(isActive: selectedTab == .ai, action: { select(.ai) })
+                    } else {
+                        CompactNavItem(
+                            tab: tab,
+                            isActive: selectedTab == tab,
+                            showLabel: !collapsed,
+                            namespace: glassNamespace,
+                            action: { select(tab) }
+                        )
+                    }
+                }
+            }
+            .padding(.horizontal, collapsed ? MeridianSpacing.sm.rawValue : MeridianSpacing.md.rawValue)
+            .padding(.vertical, MeridianSpacing.sm.rawValue)
+        }
+        .glassEffect(.regular, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
+        .meridianAnimation(Motion.snappy(), value: collapsed)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Navigation")
+    }
+
+    private func select(_ tab: MeridianTab) {
+        guard selectedTab != tab else { return }
+        withAnimation(Motion.reduced(Motion.snappy(), reduceMotion: reduceMotion)) {
+            selectedTab = tab
+        }
+    }
+}
+
+// MARK: - CompactNavItem
+
+private struct CompactNavItem: View {
+    let tab: MeridianTab
+    let isActive: Bool
+    let showLabel: Bool
+    let namespace: Namespace.ID
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: NavMetrics.iconLabelGap) {
+                Image(systemName: isActive ? tab.activeIcon : tab.icon)
+                    .font(.system(size: NavMetrics.iconSize, weight: NavMetrics.iconWeight(active: isActive)))
+                    .symbolRenderingMode(.hierarchical)
+
+                if isActive && showLabel {
+                    Text(tab.title)
+                        .font(.labelMedium)
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .move(edge: .leading)))
+                }
+            }
+            .foregroundStyle(
+                isActive ? MeridianColors.onPrimaryContainer : MeridianColors.onSurfaceVariant
+            )
+            .padding(.horizontal, isActive && showLabel ? NavMetrics.activeHPadding : NavMetrics.inactiveHPadding)
+            .padding(.vertical, NavMetrics.vPadding)
+            .frame(minWidth: NavMetrics.minTouchTarget, minHeight: NavMetrics.minTouchTarget)
+            .background {
+                if isActive {
+                    Capsule()
+                        .fill(MeridianColors.primaryContainer)
+                        .matchedGeometryEffect(id: "compact-nav-active", in: namespace)
+                }
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(NavPressStyle())
+        .sensoryFeedback(.selection, trigger: isActive) { _, now in now }
+        .accessibilityLabel(tab.navAccessibilityLabel)
+        .accessibilityHint(tab.navAccessibilityHint)
+        .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
+        .meridianAnimation(Motion.smooth(), value: isActive)
+        .meridianAnimation(Motion.smooth(), value: showLabel)
+    }
+}
+
+// MARK: - AiNavButton (center-prominent launcher)
+
+private struct AiNavButton: View {
+    let isActive: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Suppress the emphasis-grow when Reduce Motion is on — the pulse is the
+    /// motion-sensitive part; the fill/tint change alone still signals selection.
+    private var activeScale: CGFloat {
+        isActive && !reduceMotion ? 1.06 : 1.0
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "sparkles")
+                .font(.system(size: NavMetrics.prominentIconSize, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(isActive ? MeridianColors.onPrimary : MeridianColors.primary)
+                .frame(width: NavMetrics.prominentSlot, height: NavMetrics.prominentSlot)
+                .background {
+                    Circle()
+                        .fill(isActive ? MeridianColors.primary : MeridianColors.primary.opacity(0.16))
+                }
+                .overlay {
+                    Circle().strokeBorder(MeridianColors.primary.opacity(0.5), lineWidth: 1)
+                }
+                .scaleEffect(activeScale)
+                .contentShape(Circle())
+        }
+        .buttonStyle(NavPressStyle())
+        .sensoryFeedback(.impact(weight: .light), trigger: isActive) { _, now in now }
+        .accessibilityLabel(MeridianTab.ai.navAccessibilityLabel)
+        .accessibilityHint(MeridianTab.ai.navAccessibilityHint)
+        .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
+        .meridianAnimation(Motion.bouncy(), value: isActive)
+    }
+}
+
 // MARK: - GlassTabBar (compact — floating pill at bottom)
 
 struct GlassTabBar: View {
@@ -72,21 +252,23 @@ struct GlassTabBar: View {
     var isHidden: Bool = false
 
     @Namespace private var glassNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack {
             Spacer()
             pill
-                .padding(.bottom, 16)
+                .padding(.bottom, MeridianSpacing.lg.rawValue)
                 .offset(y: isHidden ? 120 : 0)
-                .animation(.spring(response: 0.4, dampingFraction: 0.75), value: isHidden)
+                // Reduce Motion: the tuck-away slide becomes a plain hide/show.
+                .meridianAnimation(Motion.bouncy(), value: isHidden)
         }
         .ignoresSafeArea(edges: .bottom)
     }
 
     private var pill: some View {
-        GlassEffectContainer(spacing: 4) {
-            HStack(spacing: 4) {
+        GlassEffectContainer(spacing: MeridianSpacing.xs.rawValue) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
                 ForEach(MeridianTab.displayOrder) { tab in
                     NavBarItem(
                         tab: tab,
@@ -95,16 +277,18 @@ struct GlassTabBar: View {
                     ) { select(tab) }
                 }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 10)
+            .padding(.horizontal, MeridianSpacing.sm.rawValue)
+            .padding(.vertical, NavMetrics.vPadding)
         }
-        .liquidGlass(cornerRadius: 36, tint: MeridianColors.primary)
+        .liquidGlass(cornerRadius: MeridianRadius.extraLarge.rawValue, tint: MeridianColors.primary)
         .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Navigation")
     }
 
     private func select(_ tab: MeridianTab) {
         guard selectedTab != tab else { return }
-        withAnimation(Motion.snappy()) {
+        withAnimation(Motion.reduced(Motion.snappy(), reduceMotion: reduceMotion)) {
             selectedTab = tab
         }
     }
@@ -121,22 +305,26 @@ private struct NavBarItem: View {
     let action: () -> Void
 
     private var contentColor: Color {
+        // Inactive tabs use the solid `onSurfaceVariant` (#94A3B8) rather than a
+        // low-alpha `onSurface`, which over the frosted primary-tinted glass and
+        // busy celestial backdrop could drop below WCAG-AA (4.5:1) for the small
+        // labels. The solid token keeps inactive tabs legible.
         isActive
             ? MeridianColors.onPrimaryContainer
-            : MeridianColors.onSurface.opacity(0.55)
+            : MeridianColors.onSurfaceVariant
     }
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: NavMetrics.iconLabelGap) {
                 Image(systemName: isActive ? tab.activeIcon : tab.icon)
-                    .font(.system(size: 20, weight: isActive ? .semibold : .regular))
+                    .font(.system(size: NavMetrics.iconSize, weight: NavMetrics.iconWeight(active: isActive)))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(contentColor)
 
                 if isActive {
                     Text(tab.title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.labelMedium)
                         .foregroundStyle(contentColor)
                         .fixedSize()
                         .transition(
@@ -147,8 +335,9 @@ private struct NavBarItem: View {
                         )
                 }
             }
-            .padding(.horizontal, isActive ? 14 : 12)
-            .padding(.vertical, 10)
+            .padding(.horizontal, isActive ? NavMetrics.activeHPadding : NavMetrics.inactiveHPadding)
+            .padding(.vertical, NavMetrics.vPadding)
+            .frame(minWidth: NavMetrics.minTouchTarget, minHeight: NavMetrics.minTouchTarget)
             .background {
                 if isActive {
                     Capsule()
@@ -159,9 +348,10 @@ private struct NavBarItem: View {
             .contentShape(Capsule())
         }
         .buttonStyle(NavPressStyle())
-        .animation(Motion.smooth(), value: isActive)
+        .meridianAnimation(Motion.smooth(), value: isActive)
         .sensoryFeedback(.selection, trigger: isActive) { _, now in now }
-        .accessibilityLabel(tab.accessibilityLabel)
+        .accessibilityLabel(tab.navAccessibilityLabel)
+        .accessibilityHint(tab.navAccessibilityHint)
         .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
     }
 }
@@ -176,9 +366,11 @@ struct GlassNavRail: View {
 
     @Namespace private var glassNamespace
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        GlassEffectContainer(spacing: 12) {
-            VStack(spacing: 12) {
+        GlassEffectContainer(spacing: MeridianSpacing.md.rawValue) {
+            VStack(spacing: MeridianSpacing.md.rawValue) {
                 ForEach(MeridianTab.displayOrder) { tab in
                     RailItem(
                         tab: tab,
@@ -187,18 +379,20 @@ struct GlassNavRail: View {
                     ) { select(tab) }
                 }
             }
-            .padding(.vertical, 16)
-            .padding(.horizontal, 12)
+            .padding(.vertical, MeridianSpacing.lg.rawValue)
+            .padding(.horizontal, MeridianSpacing.md.rawValue)
         }
-        .liquidGlass(cornerRadius: 36, tint: MeridianColors.primary)
+        .liquidGlass(cornerRadius: MeridianRadius.extraLarge.rawValue, tint: MeridianColors.primary)
         .shadow(color: Color.black.opacity(0.35), radius: 20, x: 0, y: 8)
-        .padding(.leading, 12)
+        .padding(.leading, MeridianSpacing.md.rawValue)
         .frame(maxHeight: .infinity, alignment: .center)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Navigation")
     }
 
     private func select(_ tab: MeridianTab) {
         guard selectedTab != tab else { return }
-        withAnimation(Motion.snappy()) {
+        withAnimation(Motion.reduced(Motion.snappy(), reduceMotion: reduceMotion)) {
             selectedTab = tab
         }
     }
@@ -213,18 +407,21 @@ private struct RailItem: View {
     let action: () -> Void
 
     private var contentColor: Color {
+        // Inactive icons use the solid `onSurfaceVariant` (#94A3B8) instead of a
+        // low-alpha `onSurface`, keeping them above WCAG-AA contrast over the
+        // translucent glass rail and celestial backdrop.
         isActive
             ? MeridianColors.onPrimaryContainer
-            : MeridianColors.onSurface.opacity(0.6)
+            : MeridianColors.onSurfaceVariant
     }
 
     var body: some View {
         Button(action: action) {
             Image(systemName: isActive ? tab.activeIcon : tab.icon)
-                .font(.system(size: 20, weight: isActive ? .semibold : .regular))
+                .font(.system(size: NavMetrics.prominentIconSize, weight: NavMetrics.iconWeight(active: isActive)))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(contentColor)
-                .frame(width: 48, height: 48)
+                .frame(width: NavMetrics.prominentSlot, height: NavMetrics.prominentSlot)
                 .background {
                     if isActive {
                         Circle()
@@ -235,9 +432,10 @@ private struct RailItem: View {
                 .contentShape(Circle())
         }
         .buttonStyle(NavPressStyle())
-        .animation(Motion.smooth(), value: isActive)
+        .meridianAnimation(Motion.smooth(), value: isActive)
         .sensoryFeedback(.selection, trigger: isActive) { _, now in now }
-        .accessibilityLabel(tab.accessibilityLabel)
+        .accessibilityLabel(tab.navAccessibilityLabel)
+        .accessibilityHint(tab.navAccessibilityHint)
         .accessibilityAddTraits(isActive ? [.isSelected, .isButton] : .isButton)
     }
 }
@@ -245,16 +443,29 @@ private struct RailItem: View {
 // MARK: - Press scale style (tactile shrink, matches Android `scale 0.88` on press)
 
 private struct NavPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
+        // Skip the tactile shrink entirely under Reduce Motion; the selection
+        // haptic still confirms the press for those users.
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.88 : 1.0)
-            .animation(Motion.quick(), value: configuration.isPressed)
+            .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? 0.88 : 1.0))
+            .animation(Motion.reduced(Motion.quick(), reduceMotion: reduceMotion), value: configuration.isPressed)
     }
 }
 
 // MARK: - Previews
 
 #if DEBUG
+#Preview("Compact Nav Bar — collapsed", traits: .sizeThatFitsLayout) {
+    @Previewable @State var tab: MeridianTab = .now
+
+    GlassCompactNavBar(selectedTab: $tab, collapsed: true)
+        .padding()
+        .background(MeridianColors.background)
+        .preferredColorScheme(.dark)
+}
+
 #Preview("Tab Bar — compact", traits: .sizeThatFitsLayout) {
     @Previewable @State var tab: MeridianTab = .now
 

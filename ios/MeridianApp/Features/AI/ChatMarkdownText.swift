@@ -41,7 +41,7 @@ enum ChatMarkdown {
     // VERIFY: pattern mirrors Android MARKDOWN_HINT exactly (escaped for NSRegularExpression).
     private static let hintRegex: NSRegularExpression? = {
         let pattern =
-            #"(\*\*.+?\*\*|__.+?__|`[^`\n]+`|^#{1,6}\s|^\s*[-*+]\s+\S|^\s*\d+\.\s+\S|^\s*>\s|\]\([^)]+\)|```)"#
+            #"(\*\*.+?\*\*|__.+?__|`[^`\n]+`|^#{1,6}\s|^\s*[-*+]\s+\S|^\s*\d+\.\s+\S|^\s*>\s|\]\([^)]+\)|```|^\s*\|.+\|\s*$)"#
         return try? NSRegularExpression(
             pattern: pattern,
             options: [.anchorsMatchLines]
@@ -57,18 +57,26 @@ struct ChatMarkdownText: View {
 
     let text: String
     var textColor: Color
-    /// Link tint; defaults to the text color at 85 % opacity (Android default).
+    /// Link tint; defaults to the brand primary (Android default).
     var linkColor: Color
+
+    /// Scales the monospaced code sizes with the user's text-size setting so code
+    /// grows alongside the surrounding Dynamic-Type body copy.
+    @ScaledMetric(relativeTo: .body) private var codeFontSize: CGFloat = 13
 
     init(text: String, textColor: Color, linkColor: Color? = nil) {
         self.text = text
         self.textColor = textColor
-        self.linkColor = linkColor ?? textColor.opacity(0.85)
+        // Links read as brand-blue everywhere this view is reused (MessageBubble
+        // passes primary explicitly; this default matches it).
+        self.linkColor = linkColor ?? MeridianColors.primary
     }
 
     var body: some View {
         if ChatMarkdown.looksLikeMarkdown(text) {
-            VStack(alignment: .leading, spacing: 2) {
+            // 4pt between blocks aligns markdown rhythm to the spacing scale
+            // (`MeridianSpacing.xs`).
+            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                     blockView(block)
                 }
@@ -90,20 +98,35 @@ struct ChatMarkdownText: View {
         case ordered(marker: String, text: String)
         case quote(text: String)
         case codeFenceLine(text: String)
+        case table(header: [String]?, rows: [[String]])
         case paragraph(text: String)
     }
 
     /// Splits the raw markdown into logical lines and classifies each. Fenced code
     /// blocks (```) toggle a verbatim mode so their contents are not re-parsed.
+    /// Consecutive `| … |` rows accumulate into one `.table` block (GFM tables —
+    /// Android's mikepenz renderer supports these natively).
     private var blocks: [Block] {
         var result: [Block] = []
         var inFence = false
+        var tableRows: [[String]] = []
+
+        func flushTable() {
+            guard !tableRows.isEmpty else { return }
+            if tableRows.count >= 2, Self.isTableSeparatorRow(tableRows[1]) {
+                result.append(.table(header: tableRows[0], rows: Array(tableRows.dropFirst(2))))
+            } else {
+                result.append(.table(header: nil, rows: tableRows))
+            }
+            tableRows = []
+        }
 
         for rawLine in text.components(separatedBy: "\n") {
             let line = rawLine
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             if trimmed.hasPrefix("```") {
+                flushTable()
                 inFence.toggle()
                 continue   // Drop the fence markers themselves (parity: code shown without ```).
             }
@@ -111,6 +134,13 @@ struct ChatMarkdownText: View {
                 result.append(.codeFenceLine(text: line))
                 continue
             }
+
+            // Table row: pipe-delimited cells. Accumulated until a non-table line.
+            if let cells = Self.tableCells(trimmed) {
+                tableRows.append(cells)
+                continue
+            }
+            flushTable()
 
             if trimmed.isEmpty {
                 // Preserve a blank line as an empty paragraph for spacing.
@@ -158,7 +188,23 @@ struct ChatMarkdownText: View {
 
             result.append(.paragraph(text: line))
         }
+        flushTable()
         return result
+    }
+
+    /// `| a | b |` → `["a", "b"]`, or nil when the line is not a table row.
+    private static func tableCells(_ trimmed: String) -> [String]? {
+        guard trimmed.count >= 2, trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
+        let inner = trimmed.dropFirst().dropLast()
+        let cells = inner.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+        return cells.isEmpty ? nil : cells
+    }
+
+    /// GFM header separator: every cell is dashes with optional alignment colons.
+    private static func isTableSeparatorRow(_ cells: [String]) -> Bool {
+        cells.allSatisfy { cell in
+            !cell.isEmpty && cell.contains("-") && cell.allSatisfy { $0 == "-" || $0 == ":" }
+        }
     }
 
     // MARK: Block rendering
@@ -168,9 +214,13 @@ struct ChatMarkdownText: View {
         switch block {
         case let .heading(level, content):
             inlineText(content)
-                .font(.system(size: 14, weight: headingWeight(level)))
+                .font(headingFont(level))
                 .foregroundStyle(textColor)
                 .fixedSize(horizontal: false, vertical: true)
+                // Extra breathing room above headings (on top of the 4pt block
+                // gap) so document hierarchy reads clearly inside compact bubbles.
+                .padding(.top, MeridianSpacing.xs.rawValue)
+                .accessibilityAddTraits(.isHeader)
 
         case let .bullet(content):
             HStack(alignment: .top, spacing: 6) {
@@ -196,9 +246,11 @@ struct ChatMarkdownText: View {
             }
 
         case let .quote(content):
-            HStack(alignment: .top, spacing: 8) {
-                Rectangle()
-                    .fill(textColor.opacity(0.3))
+            HStack(alignment: .top, spacing: MeridianSpacing.sm.rawValue) {
+                // Brand-accent rule bar so 'Tip:' style callouts pick up the
+                // celestial-blue already used for links.
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(MeridianColors.primary.opacity(0.4))
                     .frame(width: 3)
                 inlineText(content)
                     .font(.bodyMedium.italic())
@@ -206,23 +258,35 @@ struct ChatMarkdownText: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.leading, 2)
+            .accessibilityElement(children: .combine)
 
         case let .codeFenceLine(content):
             Text(content.isEmpty ? " " : content)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: codeFontSize, design: .monospaced))
                 .foregroundStyle(textColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, MeridianSpacing.sm.rawValue)
                 .padding(.vertical, 2)
                 .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(textColor.opacity(0.12))
+                    // Frosted-surface material family (not a white wash) so code
+                    // reads as the same substance as bubbles and cards.
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                        .fill(MeridianColors.surface.opacity(0.55))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                        }
                 }
+
+        case let .table(header, rows):
+            tableView(header: header, rows: rows)
 
         case let .paragraph(content):
             if content.isEmpty {
-                // Blank-line spacer.
-                Color.clear.frame(height: 4)
+                // Blank-line spacer, aligned to the spacing scale.
+                Color.clear
+                    .frame(height: MeridianSpacing.xs.rawValue)
+                    .accessibilityHidden(true)
             } else {
                 inlineText(content)
                     .font(.bodyMedium)
@@ -232,11 +296,64 @@ struct ChatMarkdownText: View {
         }
     }
 
-    private func headingWeight(_ level: Int) -> Font.Weight {
+    /// A GFM table on a tinted card (Android: mikepenz `tableBackground`).
+    /// Ragged rows are tolerated — short rows simply leave trailing cells empty.
+    private func tableView(header: [String]?, rows: [[String]]) -> some View {
+        let columns = max(header?.count ?? 0, rows.map(\.count).max() ?? 0)
+        let grid = Grid(alignment: .leading, horizontalSpacing: MeridianSpacing.md.rawValue, verticalSpacing: MeridianSpacing.xs.rawValue) {
+            if let header {
+                GridRow {
+                    ForEach(0..<columns, id: \.self) { column in
+                        inlineText(column < header.count ? header[column] : "")
+                            // labelMedium token (12, semibold) — Dynamic-Type scalable,
+                            // with a little extra vertical breathing room.
+                            .font(.labelMedium)
+                            .foregroundStyle(textColor)
+                            .padding(.vertical, 2)
+                    }
+                }
+                Rectangle()
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 1)
+                    .gridCellColumns(columns)
+            }
+            ForEach(rows.indices, id: \.self) { row in
+                GridRow {
+                    ForEach(0..<columns, id: \.self) { column in
+                        inlineText(column < rows[row].count ? rows[row][column] : "")
+                            .font(.bodyMedium)
+                            .foregroundStyle(textColor)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        // Wide tables (4+ columns / long cells / large Dynamic Type) scroll
+        // instead of compressing or clipping inside the ~300pt bubble cap.
+        return ScrollView(.horizontal, showsIndicators: false) {
+            grid.padding(MeridianSpacing.sm.rawValue)
+        }
+        .background {
+            // Same frosted-surface material family as code fences and cards.
+            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                .fill(MeridianColors.surface.opacity(0.55))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                }
+        }
+    }
+
+    /// Maps a heading level to a token font so the outermost heading reads first.
+    /// Compact bubbles rule out a full display scale, so H1/H2 map to
+    /// `titleMedium` (16) and H3+ to `bodyMedium` (14) — a subtle but real
+    /// size *and* weight step, not weight alone. Both tokens are relative to a
+    /// Dynamic-Type text style so headings grow with the user's text-size setting.
+    private func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1, 2: return .bold
-        case 3, 4: return .semibold
-        default:   return .medium
+        case 1, 2: return .titleMedium.weight(.bold)
+        case 3, 4: return .bodyMedium.weight(.semibold)
+        default:   return .bodyMedium.weight(.medium)
         }
     }
 

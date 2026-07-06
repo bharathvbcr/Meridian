@@ -64,8 +64,23 @@ struct OnboardingView: View {
     var onComplete: () -> Void
 
     @State private var currentStep: Int = 0
+    @State private var advanceTrigger = 0
+    @State private var skipTrigger = 0
+
+    /// Drives an `AccessibilityFocusState` move so VoiceOver re-reads the card
+    /// each time the step advances (the silent cross-fade otherwise conveys nothing).
+    @AccessibilityFocusState private var stepFocused: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isLastStep: Bool { currentStep == onboardingSteps.count - 1 }
+
+    private var currentStepModel: OnboardingStep { onboardingSteps[currentStep] }
+
+    /// Spring used for the step advance; collapses to no animation under Reduce Motion.
+    private var stepTransition: Animation? {
+        reduceMotion ? nil : Motion.smooth()
+    }
 
     var body: some View {
         ZStack {
@@ -73,10 +88,13 @@ struct OnboardingView: View {
             // No opaque background — the app remains visible behind the overlay.
             Color.black.opacity(0.55)
                 .ignoresSafeArea()
+                .accessibilityHidden(true)
 
             // Centered glass card with horizontal padding (Android: 28dp).
-            VStack(spacing: 28) {
-                // Cross-fading step content.
+            VStack(spacing: MeridianSpacing.xxl.rawValue) {
+                // Cross-fading step content. Combined into one accessibility
+                // element so VoiceOver reads icon-title-body as a single unit,
+                // and re-focused on step change so the advance is announced.
                 ZStack {
                     ForEach(onboardingSteps) { step in
                         if step.id == currentStep {
@@ -85,28 +103,45 @@ struct OnboardingView: View {
                         }
                     }
                 }
-                .animation(Motion.smooth(), value: currentStep)
+                // Reserve height so differing body lengths settle smoothly
+                // instead of popping the card between steps, and so scaled
+                // Dynamic Type still expands the card without clipping.
+                .frame(minHeight: 168)
+                .animation(stepTransition, value: currentStep)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(Text("\(currentStepModel.title). \(currentStepModel.body)"))
+                .accessibilityValue(Text("Step \(currentStep + 1) of \(onboardingSteps.count)"))
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityFocused($stepFocused)
 
-                // Step dots.
+                // Step dots — decorative visually, but expose progress to VoiceOver.
                 StepDots(total: onboardingSteps.count, current: currentStep)
 
                 // Skip (left) + Next/Done (right) — both always visible.
                 HStack {
                     Button {
-                        withAnimation(Motion.smooth()) { onComplete() }
+                        skipTrigger &+= 1
+                        withAnimation(stepTransition) { onComplete() }
                     } label: {
                         Text("Skip")
                             .font(.titleMedium)
                             .foregroundStyle(MeridianColors.onSurfaceVariant)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .padding(.horizontal, MeridianSpacing.lg.rawValue)
+                            .padding(.vertical, MeridianSpacing.md.rawValue)
+                            // Guarantee a >=44pt hit target for the text-only button.
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Skip"))
+                    .accessibilityHint(Text("Skips the introduction and opens Meridian"))
+                    .accessibilityAddTraits(.isButton)
 
                     Spacer()
 
                     Button {
-                        withAnimation(Motion.smooth()) {
+                        advanceTrigger &+= 1
+                        withAnimation(stepTransition) {
                             if isLastStep {
                                 onComplete()
                             } else {
@@ -116,34 +151,38 @@ struct OnboardingView: View {
                     } label: {
                         Text(isLastStep ? "Done" : "Next")
                             .font(.titleMedium)
-                            .foregroundStyle(MeridianColors.background)
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 12)
+                            .foregroundStyle(MeridianColors.onPrimary)
+                            .padding(.horizontal, MeridianRadius.large.rawValue)
+                            .padding(.vertical, MeridianSpacing.md.rawValue)
+                            .frame(minHeight: 44)
                             .background {
                                 Capsule().fill(MeridianColors.primary)
                             }
                     }
                     .buttonStyle(.plain)
-                    .animation(Motion.snappy(), value: isLastStep)
+                    .animation(reduceMotion ? nil : Motion.snappy(), value: isLastStep)
+                    .accessibilityLabel(Text(isLastStep ? "Done" : "Next"))
+                    .accessibilityHint(Text(isLastStep ? "Finishes onboarding and opens Meridian" : "Shows the next introduction step"))
+                    .accessibilityAddTraits(.isButton)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 28)
+            .padding(.horizontal, MeridianSpacing.xxl.rawValue)
+            .padding(.vertical, MeridianRadius.large.rawValue)
             .frame(maxWidth: .infinity)
-            .background {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.60))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(MeridianColors.primary.opacity(0.06))
-                    }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
-                    }
-            }
-            .padding(.horizontal, 28)
+            // Compose with the shared liquid-glass surface so the card refracts
+            // the celestial backdrop identically to Now's cards and honors the
+            // reduce-transparency override, instead of a bespoke material trick.
+            .liquidGlass(cornerRadius: MeridianRadius.large.rawValue)
+            .padding(.horizontal, MeridianRadius.large.rawValue)
         }
+        .sensoryFeedback(.selection, trigger: advanceTrigger)
+        .sensoryFeedback(.impact(weight: .light), trigger: skipTrigger)
+        // Move VoiceOver focus to the freshly cross-faded card so the step
+        // change is announced non-visually.
+        .onChange(of: currentStep) { _, _ in
+            stepFocused = true
+        }
+        .onAppear { stepFocused = true }
     }
 }
 
@@ -155,15 +194,18 @@ private struct OnboardingStepContent: View {
     var body: some View {
         VStack(spacing: 0) {
             OnboardingIcon(systemName: step.icon)
+                // Decorative — the combined parent label carries the meaning.
+                .accessibilityHidden(true)
 
-            Spacer().frame(height: 16)
+            Spacer().frame(height: MeridianSpacing.lg.rawValue)
 
             Text(step.title)
                 .font(.headlineMedium)
                 .foregroundStyle(MeridianColors.onSurface)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
 
-            Spacer().frame(height: 10)
+            Spacer().frame(height: MeridianSpacing.sm.rawValue)
 
             Text(step.body)
                 .font(.bodyMedium)
@@ -181,14 +223,16 @@ private struct OnboardingStepContent: View {
 private struct OnboardingIcon: View {
     let systemName: String
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: 52, weight: .medium))
             .symbolRenderingMode(.hierarchical)
             .foregroundStyle(MeridianColors.primary)
-            // Tasteful iOS polish: a gentle, bounded pulse on appearance.
-            // VERIFY: `.symbolEffect(.bounce, options:)` available on iOS 27.
-            .symbolEffect(.bounce, options: .nonRepeating)
+            // Tasteful iOS polish: a gentle, bounded pulse on appearance —
+            // suppressed under Reduce Motion (the icon itself is unchanged).
+            .symbolEffect(.bounce, options: .nonRepeating, isActive: !reduceMotion)
             .id(systemName)
     }
 }
@@ -199,8 +243,10 @@ private struct StepDots: View {
     let total: Int
     let current: Int
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
             ForEach(0 ..< total, id: \.self) { index in
                 Circle()
                     .fill(
@@ -214,7 +260,10 @@ private struct StepDots: View {
                     )
             }
         }
-        .animation(Motion.snappy(), value: current)
+        .animation(reduceMotion ? nil : Motion.snappy(), value: current)
+        // Purely decorative — progress is already conveyed via the step card's
+        // accessibilityValue, so avoid double-announcing "Step X of Y".
+        .accessibilityHidden(true)
     }
 }
 

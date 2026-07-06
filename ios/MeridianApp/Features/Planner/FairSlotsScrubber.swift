@@ -39,6 +39,12 @@ struct FairSlotsScrubber: View {
     /// Bumped whenever the selection snaps to a new band — drives `.sensoryFeedback`.
     @State private var selectionTick = 0
 
+    /// Honour the user's Reduce Motion setting: skip press bounce and switch the
+    /// expand/collapse morph to a near-instant crossfade (matches the World scrubber).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Drives the accessory glass tints so the dial tracks the glass-opacity slider.
+    @Environment(\.glassOpacity) private var glassOpacity
+
     private var localZone: TimeZone { TimeFormats.safeTimeZone(id: localZoneId) }
 
     private var selected: DialHour? {
@@ -53,6 +59,16 @@ struct FairSlotsScrubber: View {
         let endDate = selected.instant.addingTimeInterval(Double(durationMinutes) * 60.0)
         let end = TimeFormats.hourMinute(date: endDate, timeZone: localZone, use24Hour: use24Hour)
         return "\(start) – \(end)"
+    }
+
+    /// Spoken rating for VoiceOver — e.g. "Optimal". Falls back to "no overlap" when filtered out.
+    private var ratingSpoken: String {
+        selected?.label?.displayName ?? "No overlap"
+    }
+
+    /// The single value read to VoiceOver for the dial and collapsed pill.
+    private var accessibilityValue: String {
+        "\(pillTime), \(ratingSpoken)"
     }
 
     var body: some View {
@@ -73,20 +89,21 @@ struct FairSlotsScrubber: View {
     private var content: some View {
         if expanded {
             expandedDial
-                .transition(.scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+                .transition(Motion.scrubberContentTransition(reduceMotion: reduceMotion))
         } else {
             collapsedPill
-                .transition(.scale(scale: 0.96, anchor: .bottom).combined(with: .opacity))
+                .transition(Motion.scrubberContentTransition(reduceMotion: reduceMotion))
         }
     }
 
     // MARK: Collapsed pill
 
     private var collapsedPill: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.titleMedium)
                 .foregroundStyle(MeridianColors.primary)
+                .accessibilityHidden(true)
             Text(pillTime)
                 .font(.titleMedium)
                 .fontWeight(.heavy)
@@ -97,24 +114,30 @@ struct FairSlotsScrubber: View {
                     .font(.labelMedium)
                     .fontWeight(.bold)
                     .foregroundStyle(color)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, MeridianSpacing.sm.rawValue)
+                    .padding(.vertical, MeridianSpacing.xs.rawValue)
                     .background { Capsule().fill(color.opacity(0.18)) }
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 12)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.vertical, MeridianSpacing.md.rawValue)
+        .frame(minHeight: 48)
         .background {
             Capsule(style: .continuous)
                 .fill(.ultraThinMaterial)
-                .overlay { Capsule().fill(MeridianColors.surface.opacity(0.5)) }
+                .overlay { Capsule().fill(MeridianColors.accessoryPillTint(opacity: glassOpacity)) }
                 .overlay { Capsule().strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1) }
         }
-        .scaleEffect(dialPressed ? 0.94 : 1)
+        .scaleEffect((dialPressed && !reduceMotion) ? 0.94 : 1)
         .contentShape(Capsule())
         .onTapGesture {
             expand()
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fair-time dial")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Double-tap to expand and scrub across the day")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Expanded dial
@@ -125,36 +148,59 @@ struct FairSlotsScrubber: View {
                 .font(.titleMedium)
                 .fontWeight(.heavy)
                 .foregroundStyle(MeridianColors.onSurface)
+                .accessibilityAddTraits(.isHeader)
             Spacer().frame(height: 2)
-            Text("\(pillTime) · \(selected?.label?.displayName ?? "No overlap")")
+            Text("\(pillTime) · \(ratingSpoken)")
                 .font(.bodyMedium)
                 .fontWeight(.semibold)
                 .foregroundStyle(MeridianColors.onSurface.opacity(0.9))
+                // Header + readout are voiced through the dial's accessibilityValue.
+                .accessibilityHidden(true)
 
-            Spacer().frame(height: 16)
+            Spacer().frame(height: MeridianSpacing.lg.rawValue)
 
             dialTrack
                 .frame(height: 72)
 
-            Spacer().frame(height: 8)
-            Text("Hold & drag across the day — green is optimal, amber is fair, red is hard.")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(MeridianColors.primary)
+            Spacer().frame(height: MeridianSpacing.sm.rawValue)
+            legend
         }
-        .padding(20)
+        .padding(MeridianSpacing.xl.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(MeridianColors.surface.opacity(0.5))
+                    RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
+                        .fill(MeridianColors.accessoryCardTint(opacity: glassOpacity))
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
                         .strokeBorder(MeridianColors.primary.opacity(0.5), lineWidth: 1.5)
                 }
         }
+    }
+
+    /// Colour-coded legend under the dial: each band word is tinted to the band it names,
+    /// so the sentence visually matches the track it explains.
+    private var legend: some View {
+        legendText
+            .font(.labelMedium)
+            .accessibilityLabel("Bands rank hours from Optimal to Difficult.")
+    }
+
+    /// Assembled step-by-step (rather than one long `+` chain) so the type-checker can
+    /// resolve it in reasonable time. Each band word is tinted to its rating color.
+    private var legendText: Text {
+        let plain = MeridianColors.onSurfaceVariant
+        var text = Text("Hold & drag across the day — ").foregroundColor(plain)
+        text = text + Text("Optimal").foregroundColor(SlotCard.ratingColor(for: .optimal))
+        text = text + Text(" is best, ").foregroundColor(plain)
+        text = text + Text("Fair").foregroundColor(SlotCard.ratingColor(for: .fair))
+        text = text + Text(" works, ").foregroundColor(plain)
+        text = text + Text("Difficult").foregroundColor(SlotCard.ratingColor(for: .difficult))
+        text = text + Text(" is hard.").foregroundColor(plain)
+        return text
     }
 
     private var dialTrack: some View {
@@ -219,7 +265,9 @@ struct FairSlotsScrubber: View {
                     .onChanged { value in
                         if !dialPressed { dialPressed = true }
                         interactionTick += 1
-                        let idx = Int(value.location.x / geo.size.width * CGFloat(hours.count))
+                        let width: CGFloat = geo.size.width
+                        let fraction: CGFloat = value.location.x / width
+                        let idx = Int(fraction * CGFloat(hours.count))
                         selectAt(idx)
                     }
                     .onEnded { _ in
@@ -228,12 +276,24 @@ struct FairSlotsScrubber: View {
                     }
             )
         }
+        // The Canvas paints an interactive control that is otherwise invisible to VoiceOver.
+        // Expose it as one adjustable element whose increment/decrement steps between the
+        // selectable (non-filtered) hours, voicing the new time + rating on each move.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fair-time dial")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Swipe up or down to move to the next selectable hour")
+        // `.accessibilityAdjustableAction` already marks the element adjustable; no
+        // explicit trait is needed (there is no `.isAdjustable` AccessibilityTraits member).
+        .accessibilityAdjustableAction(handleAccessibilityAdjust)
     }
 
     // MARK: Behavior
 
     private func expand() {
-        withAnimation(.spring(response: 0.32, dampingFraction: 0.72)) { expanded = true }
+        withAnimation(Motion.scrubberExpandCollapse(expanding: true, reduceMotion: reduceMotion)) {
+            expanded = true
+        }
         interactionTick += 1
     }
 
@@ -243,8 +303,24 @@ struct FairSlotsScrubber: View {
         collapseTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(400))
             guard !Task.isCancelled, !dialPressed else { return }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { expanded = false }
+            withAnimation(Motion.scrubberExpandCollapse(expanding: false, reduceMotion: reduceMotion)) {
+                expanded = false
+            }
         }
+    }
+
+    /// VoiceOver adjustable handler: steps the selection to the neighbouring selectable
+    /// (non-filtered) hour. Increment moves later in the day, decrement earlier — mirroring
+    /// the visual left→right ordering of the bands.
+    private func handleAccessibilityAdjust(_ direction: AccessibilityAdjustmentDirection) {
+        if !expanded { expand() }
+        let next = direction == .increment
+            ? nextSelectable(after: selectedIndex)
+            : previousSelectable(before: selectedIndex)
+        interactionTick += 1
+        guard next != selectedIndex else { return }
+        selectionTick += 1
+        onSelect(next)
     }
 
     /// Snaps the requested index to the nearest selectable (non-`nil` slot) band and notifies.
@@ -265,6 +341,26 @@ struct FairSlotsScrubber: View {
             if d < bestDist { bestDist = d; best = i }
         }
         return best >= 0 ? best : clamped
+    }
+
+    /// First selectable band strictly after `index`; returns `index` when none exists.
+    private func nextSelectable(after index: Int) -> Int {
+        var i = index + 1
+        while i < hours.count {
+            if hours[i].slot != nil { return i }
+            i += 1
+        }
+        return index
+    }
+
+    /// First selectable band strictly before `index`; returns `index` when none exists.
+    private func previousSelectable(before index: Int) -> Int {
+        var i = index - 1
+        while i >= 0 {
+            if hours[i].slot != nil { return i }
+            i -= 1
+        }
+        return index
     }
 
     private func bandColor(_ label: SlotLabel?) -> Color {

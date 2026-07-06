@@ -26,7 +26,9 @@ public actor GeoPlaceRepository {
 
     public static let shared = GeoPlaceRepository()
 
-    private var handle: OpaquePointer?
+    // `nonisolated(unsafe)` so the `nonisolated deinit` can close the SQLite handle; once
+    // deinit runs no other reference to the actor remains, so the access is race-free.
+    nonisolated(unsafe) private var handle: OpaquePointer?
     private var prepared = false
     private var unavailable = false
 
@@ -61,7 +63,7 @@ public actor GeoPlaceRepository {
         WHERE name_lower LIKE ? ESCAPE '\\' OR ascii_lower LIKE ? ESCAPE '\\' \
         ORDER BY population DESC LIMIT ?
         """
-        return query(db, sql) { stmt in
+        return self.query(db, sql) { stmt in
             Self.bindText(stmt, 1, prefix)
             Self.bindText(stmt, 2, prefix)
             sqlite3_bind_int(stmt, 3, Int32(limit))
@@ -87,7 +89,7 @@ public actor GeoPlaceRepository {
         WHERE iata_lower = ? OR iata_lower LIKE ? ESCAPE '\\' OR name_lower LIKE ? ESCAPE '\\' \
         ORDER BY (iata_lower = ?) DESC, length(iata_lower), iata_lower, name LIMIT ?
         """
-        return query(db, sql) { stmt in
+        return self.query(db, sql) { stmt in
             Self.bindText(stmt, 1, folded)
             Self.bindText(stmt, 2, prefix)
             Self.bindText(stmt, 3, contains)

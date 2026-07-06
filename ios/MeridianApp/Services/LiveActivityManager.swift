@@ -25,9 +25,13 @@ final class LiveActivityManager {
 
     private let log = Logger(subsystem: "com.example.meridian", category: "LiveActivity")
 
-    /// The currently running activity, if any.
-    private var currentActivity: Activity<EventCountdownAttributes>?
-    /// The task id backing `currentActivity`, used to detect when the "next" event changes.
+    /// The task id of the activity we currently track, used to detect when the "next" event changes.
+    ///
+    /// We deliberately do *not* hold the `Activity` handle in actor state: `Activity` is not
+    /// `Sendable`, and its `update`/`end` methods are `nonisolated async`, so a handle pulled out
+    /// of actor-isolated storage cannot be sent into them under region-based isolation. Instead we
+    /// re-fetch the live handle from `Activity.activities` (which vends fresh, disconnected values)
+    /// keyed by the `taskId` carried in each activity's attributes.
     private var currentTaskId: String?
 
     private init() {}
@@ -58,8 +62,10 @@ final class LiveActivityManager {
             return
         }
 
-        if currentTaskId == next.id, let activity = currentActivity {
-            await update(activity, title: next.title, date: next.date)
+        let isRunning = Activity<EventCountdownAttributes>.activities
+            .contains { $0.attributes.taskId == next.id }
+        if currentTaskId == next.id, isRunning {
+            await update(taskId: next.id, title: next.title, date: next.date)
         } else {
             // The next event changed (or none was running): end the old one and start fresh.
             await endCurrent()
@@ -85,7 +91,7 @@ final class LiveActivityManager {
                 content: content,
                 pushType: nil
             )
-            currentActivity = activity
+            _ = activity
             currentTaskId = taskId
             log.debug("Started live activity for task \(taskId, privacy: .public)")
         } catch {
@@ -93,21 +99,21 @@ final class LiveActivityManager {
         }
     }
 
-    private func update(_ activity: Activity<EventCountdownAttributes>, title: String, date: Date) async {
+    private func update(taskId: String, title: String, date: Date) async {
         let state = EventCountdownAttributes.ContentState(eventTitle: title, eventDate: date)
         let content = ActivityContent(state: state, staleDate: date)
-        await activity.update(content)
+        // Handles vended by `Activity.activities` are in their own region, so sending them
+        // into the `nonisolated async` `update` is race-free.
+        for activity in Activity<EventCountdownAttributes>.activities where activity.attributes.taskId == taskId {
+            await activity.update(content)
+        }
     }
 
     private func endCurrent() async {
-        // End any tracked activity, plus defensively any orphaned activities (e.g. after a relaunch).
-        if let activity = currentActivity {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
+        // End every running activity (the one we track plus any orphans left after a relaunch).
         for activity in Activity<EventCountdownAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
-        currentActivity = nil
         currentTaskId = nil
     }
 }

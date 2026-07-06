@@ -19,7 +19,9 @@ import os
 ///
 /// `Sendable`: it holds only immutable configuration and touches the filesystem,
 /// so it is safe to call from any actor. The sync manager drives it on the main actor.
-struct InteropClient: Sendable {
+/// `@unchecked` because the stored `FileManager` is not `Sendable`, but it is process-global
+/// and thread-safe for the read-only operations used here.
+struct InteropClient: @unchecked Sendable {
 
     private let log = Logger(subsystem: "com.example.meridian", category: "Interop")
 

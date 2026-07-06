@@ -594,6 +594,21 @@ object ZoneCoordinates {
     fun distanceDegrees(lat: Double, lng: Double, point: GeoPoint): Double =
         sqrt(squaredDistance(lat, lng, point))
 
+    /**
+     * True when [point] plausibly lies inside [zoneId]'s territory: the zone nearest to the point
+     * keeps the same clock as [zoneId] at [instant]. Used to decide whether the device's own fix
+     * may stand in for the home zone's representative city on the map — a home set manually to a
+     * faraway city keeps pinning at that city.
+     */
+    fun pointMatchesZoneClock(zoneId: String, point: GeoPoint, instant: Instant): Boolean {
+        val nearest = nearestKnownZone(point.latitude, point.longitude)
+        val zoneOffset = runCatching { ZoneId.of(zoneId).rules.getOffset(instant) }.getOrNull()
+            ?: return false
+        val nearestOffset = runCatching { ZoneId.of(nearest).rules.getOffset(instant) }.getOrNull()
+            ?: return false
+        return zoneOffset == nearestOffset
+    }
+
     private fun offsetFallback(zoneId: String, instant: Instant): GeoPoint {
         val zone = runCatching { ZoneId.of(zoneId) }.getOrDefault(ZoneId.of("UTC"))
         val offsetSeconds = zone.rules.getOffset(instant).totalSeconds

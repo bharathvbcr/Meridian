@@ -125,20 +125,17 @@ struct ContactPicker: View {
     }
 
     private var deniedState: some View {
-        VStack(spacing: 16) {
-            EmptyStateView(
-                icon: "person.crop.circle.badge.exclamationmark",
-                title: "Contacts Access Off",
-                message: "Enable Contacts access in Settings to pick a name, or type it manually."
-            )
-            Button("Open Settings") {
+        EmptyStateView(
+            icon: "person.crop.circle.badge.exclamationmark",
+            title: "Contacts Access Off",
+            message: "Enable Contacts access in Settings to pick a name, or type it manually.",
+            actionLabel: "Open Settings",
+            action: {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
             }
-            .font(.titleMedium)
-            .foregroundStyle(MeridianColors.primary)
-        }
+        )
     }
 
     // MARK: - Search

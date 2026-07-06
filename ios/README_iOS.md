@@ -24,7 +24,11 @@ brew install xcodegen
 cd ios
 xcodegen generate
 
-# Open in Xcode
+# Build from the command line (or open in Xcode)
+xcodebuild -project Meridian.xcodeproj -scheme Meridian \
+  -destination 'platform=iOS Simulator,name=iPhone 16' build
+
+# Or from the repo root: make ios / make build-all
 open Meridian.xcodeproj
 ```
 

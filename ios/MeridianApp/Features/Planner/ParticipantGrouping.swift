@@ -22,7 +22,9 @@ import Foundation
 
 /// Favorite pinned cities (not the residence/home anchor) and favorite contacts offered on the
 /// Plan screen. Mirrors Android `PlannerParticipantPool`.
-struct PlannerParticipantPool: Sendable {
+// Holds SwiftData `@Model` values (`SavedZone`/`Person`), which are non-`Sendable` and used
+// only on the main actor by the Plan screen, so this wrapper is intentionally not `Sendable`.
+struct PlannerParticipantPool {
     let zones: [SavedZone]
     let people: [Person]
 }

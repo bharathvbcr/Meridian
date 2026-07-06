@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +68,10 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +81,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.StrokeCap
@@ -85,6 +89,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.MainViewModel
@@ -96,16 +104,20 @@ import com.example.core.data.offsetDiffLabel
 import com.example.core.data.residenceZone
 import com.example.core.data.wallClockKey
 import com.example.core.data.PlannedTask
+import com.example.core.designsystem.EmptyStateCard
 import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassFormBottomSheet
+import com.example.core.designsystem.daylightGlowBehind
 import com.example.core.designsystem.HomeCityPickerSheet
 import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.MeridianWordmark
 import com.example.core.designsystem.Motion
 import com.example.core.designsystem.SectionHeader
+import com.example.core.designsystem.LocalTabBarInsetHeight
 import com.example.core.designsystem.rememberIs24Hour
 import com.example.core.designsystem.transparentCardColors
+import com.example.core.designsystem.reportBarScroll
 import com.example.core.time.SolarMath
 import com.example.core.time.TimeFormats
 import com.example.core.time.ZoneCoordinates
@@ -118,7 +130,6 @@ import java.time.format.DateTimeFormatter
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -140,12 +151,18 @@ import kotlin.math.sin
 
 private val DEG_TO_RAD = (Math.PI / 180.0).toFloat()
 
+private val ZONE_ABBREVIATION_FORMATTER = DateTimeFormatter.ofPattern("z")
+
+// Spoken (never rendered) time for the analog clock's screen-reader description, e.g. "4:32 PM".
+private val ANALOG_CLOCK_A11Y_FORMATTER = DateTimeFormatter.ofPattern("h:mm a")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NowScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier,
-    hazeState: HazeState = remember { HazeState() }
+    hazeState: HazeState = remember { HazeState() },
+    onNavigate: (String) -> Unit = {},
 ) {
     var currentTime by remember { mutableStateOf(ZonedDateTime.now()) }
     val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
@@ -153,6 +170,7 @@ fun NowScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val plannedTasks by viewModel.plannedTasks.collectAsStateWithLifecycle()
     val is24Hour = rememberIs24Hour(settings)
+    val tabBarInset = LocalTabBarInsetHeight.current
 
     val lazyListState = rememberLazyListState()
     var draggingKey by remember { mutableStateOf<Any?>(null) }
@@ -176,10 +194,17 @@ fun NowScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
-        while (true) {
-            currentTime = ZonedDateTime.now()
-            delay(1000)
+    // Everything on this screen renders at minute granularity except the seconds readout and
+    // the analog second hand, which own their own 1 s tick inside LiveClockRow. Ticking the
+    // screen-level state once per minute keeps the whole LazyColumn from recomposing every
+    // second, and repeatOnLifecycle stops the tick while the app is backgrounded.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                currentTime = ZonedDateTime.now()
+                delay(60_000L - (System.currentTimeMillis() % 60_000L) + 20L)
+            }
         }
     }
 
@@ -204,11 +229,7 @@ fun NowScreen(
     }
 
     val zoneAbbreviation = remember(localZoneId, currentTime) {
-        currentTime.withZoneSameInstant(localZoneId).format(DateTimeFormatter.ofPattern("z"))
-    }
-    val offsetText = remember(localZoneId, currentTime) {
-        val offset = currentTime.withZoneSameInstant(localZoneId).offset.toString()
-        if (offset == "Z") "±00:00" else offset
+        currentTime.withZoneSameInstant(localZoneId).format(ZONE_ABBREVIATION_FORMATTER)
     }
 
     LazyColumn(
@@ -216,6 +237,7 @@ fun NowScreen(
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .reportBarScroll()
             .padding(horizontal = 16.dp)
             .pointerInput(lazyListState) {
                 // Distinguishes a reorder from a "hold still" gesture: any real drag flips this true,
@@ -303,7 +325,9 @@ fun NowScreen(
             ) {
                 AnimatedContent(
                     targetState = greeting,
-                    transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(400)) },
+                    // Spring crossfade (north-star: no linear tweens for user-facing transitions) —
+                    // matches the chevron rotation and expand/collapse springs used below.
+                    transitionSpec = { fadeIn(Motion.smooth()) togetherWith fadeOut(Motion.smooth()) },
                     label = "greeting"
                 ) { greetingText ->
                     Text(
@@ -313,8 +337,10 @@ fun NowScreen(
                         color = MaterialTheme.colorScheme.onBackground
                     )
                 }
+                // The big clock card below owns the UTC offset ("UTC±0 · Now"), so the header
+                // subtitle drops it to avoid repeating the same metadata twice within ~60dp.
                 Text(
-                    text = "$zoneAbbreviation · UTC$offsetText · ${localZoneId.id}",
+                    text = "$zoneAbbreviation · ${localZoneId.id}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
@@ -357,36 +383,14 @@ fun NowScreen(
         // Agenda List
         if (upcomingTasks.isEmpty()) {
             item {
-                LiquidGlassSurface(
+                EmptyStateCard(
+                    icon = Icons.Default.EventAvailable,
+                    title = "Your schedule is clear",
+                    message = "Use the Plan tab or AI Assistant to schedule your next multi-zone meeting.",
                     hazeState = hazeState,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.EventAvailable,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "Your schedule is clear",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Use the Plan tab or AI Assistant to schedule your next multi-zone meeting.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
+                    actionLabel = "Open Plan",
+                    onAction = { onNavigate("plan") },
+                )
                 Spacer(Modifier.height(16.dp))
             }
         } else {
@@ -445,36 +449,25 @@ fun NowScreen(
         // Pinned World Clocks
         if (localWatchlistZones.isEmpty()) {
             item {
-                LiquidGlassSurface(
+                EmptyStateCard(
+                    icon = Icons.Default.Public,
+                    title = "Watchlist is empty",
+                    message = "Search and pin cities in the World Clock tab to monitor them here.",
                     hazeState = hazeState,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Public,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f),
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = "Watchlist is empty",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Search and pin other cities in the World Clock tab to monitor them here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
+                    actionLabel = "Open World",
+                    onAction = { onNavigate("world") },
+                )
+            }
+        } else if (displayedZones.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    icon = Icons.Default.Star,
+                    title = "No favorites yet",
+                    message = "Star a zone to see it here, or browse all zones.",
+                    hazeState = hazeState,
+                    actionLabel = "Show all",
+                    onAction = { showFavoritesOnly = false },
+                )
             }
         } else {
             itemsIndexed(displayedZones, key = { _, zone -> zone.id }) { index, zone ->
@@ -487,7 +480,10 @@ fun NowScreen(
                     isLast = index == displayedZones.size - 1,
                     workStartHour = settings.defaultWorkStartHour,
                     workEndHour = settings.defaultWorkEndHour,
-                    contacts = contactsForZone(zone, people, savedZones),
+                    // O(people × zones) scan — memoized so it doesn't re-run on every clock tick.
+                    contacts = remember(zone.id, people, savedZones) {
+                        contactsForZone(zone, people, savedZones)
+                    },
                     onAddContact = { name ->
                         viewModel.addPerson(
                             name = name,
@@ -516,19 +512,15 @@ fun NowScreen(
 
         if (orphanContactGroups.isNotEmpty()) {
             item {
-                Row(
+                SectionHeader(
+                    title = "Contact locations",
+                    icon = Icons.Filled.Group,
+                    style = MaterialTheme.typography.titleLarge,
+                    iconTint = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 4.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = "Contact locations",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                    )
-                }
+                        .padding(vertical = 8.dp),
+                )
             }
             orphanContactGroups.forEach { group ->
                 item(key = "contact-${group.zoneId}-${group.displayName}") {
@@ -563,7 +555,7 @@ fun NowScreen(
         }
 
         item {
-            Spacer(Modifier.height(120.dp)) // Navigation bar padding
+            Spacer(Modifier.height(tabBarInset + 24.dp)) // Clear floating nav bar
         }
     }
 }
@@ -627,8 +619,6 @@ private fun TimeAndLocationCard(
         val coord = ZoneCoordinates.coordinateFor(zoneId, currentTime.toInstant())
         SolarMath.isDaylight(coord.latitude, coord.longitude, currentTime.toInstant())
     }
-    val daylightGlow = GlassDefaults.daylightGlow
-    val nightGlow = GlassDefaults.nightGlow
 
     LiquidGlassSurface(
         hazeState = hazeState,
@@ -638,53 +628,14 @@ private fun TimeAndLocationCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .drawBehind {
-                    val glowColor = if (isDaylight) {
-                        daylightGlow.copy(alpha = 0.22f)
-                    } else {
-                        nightGlow.copy(alpha = 0.22f)
-                    }
-                    drawCircle(
-                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                            colors = listOf(glowColor, Color.Transparent),
-                            center = Offset(size.width * 0.85f, size.height * 0.15f),
-                            radius = size.width * 0.6f
-                        ),
-                        center = Offset(size.width * 0.85f, size.height * 0.15f),
-                        radius = size.width * 0.6f
-                    )
-                }
+                .daylightGlowBehind(isDaylight)
                 .padding(20.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = currentTime.format(timeFormatter),
-                        style = MaterialTheme.typography.displaySmall.copy(
-                            fontSize = 32.sp,
-                            fontWeight = FontWeight.Black
-                        ),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = currentTime.format(dateFormatter),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "$localUtcOffset · Now",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                AnalogClock(time = currentTime)
-            }
+            LiveClockRow(
+                timeFormatter = timeFormatter,
+                dateFormatter = dateFormatter,
+                utcOffsetLabel = localUtcOffset,
+            )
 
             AnchorZoneSection(
                 slotLabel = "Home",
@@ -743,6 +694,59 @@ private fun TimeAndLocationCard(
     }
 }
 
+/**
+ * The only per-second consumers on this screen: the HH:mm:ss readout and the analog second
+ * hand. Owning the 1 s tick here confines every-second recomposition to this row while the
+ * rest of NowScreen ticks once per minute.
+ */
+@Composable
+private fun LiveClockRow(
+    timeFormatter: DateTimeFormatter,
+    dateFormatter: DateTimeFormatter,
+    utcOffsetLabel: String,
+) {
+    var now by remember { mutableStateOf(ZonedDateTime.now()) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                now = ZonedDateTime.now()
+                delay(1_000L - (System.currentTimeMillis() % 1_000L))
+            }
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = now.format(timeFormatter),
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Black
+                ),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = now.format(dateFormatter),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "$utcOffsetLabel · Now",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        AnalogClock(time = now)
+    }
+}
+
 @Composable
 private fun AnchorZoneSection(
     slotLabel: String,
@@ -760,7 +764,7 @@ private fun AnchorZoneSection(
     showChangeButton: Boolean = true,
 ) {
     androidx.compose.material3.HorizontalDivider(
-        modifier = Modifier.padding(vertical = 14.dp),
+        modifier = Modifier.padding(vertical = 12.dp),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
     )
 
@@ -908,7 +912,17 @@ private fun AnalogClock(
     val tertiaryColor = MaterialTheme.colorScheme.tertiary
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
 
-    Canvas(modifier = modifier.size(100.dp)) {
+    // The face is drawn, not typed, so TalkBack would otherwise skip the entire time
+    // visualization. Spell the depicted time so screen-reader users hear the hero clock.
+    val clockDescription = remember(time.hour, time.minute) {
+        "Analog clock showing ${time.format(ANALOG_CLOCK_A11Y_FORMATTER)}"
+    }
+
+    Canvas(
+        modifier = modifier
+            .size(100.dp)
+            .clearAndSetSemantics { contentDescription = clockDescription }
+    ) {
         val center = Offset(size.width / 2f, size.height / 2f)
         val radius = size.width / 2f
 
@@ -1019,8 +1033,6 @@ private fun SolarDaylightWidget(
     val isDaylight = remember(geoPoint, currentTime.toEpochSecond() / 60) {
         SolarMath.isDaylight(geoPoint.latitude, geoPoint.longitude, currentTime.toInstant())
     }
-    val daylightGlow = GlassDefaults.daylightGlow
-    val nightGlow = GlassDefaults.nightGlow
 
     val daylightSummaryText = remember(sunTimes) {
         if (sunTimes.sunrise != null && sunTimes.sunset != null) {
@@ -1040,22 +1052,7 @@ private fun SolarDaylightWidget(
         modifier = Modifier
             .fillMaxWidth()
             .liquidGlass(hazeState, tintColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.05f))
-            .drawBehind {
-                val glowColor = if (isDaylight) {
-                    daylightGlow.copy(alpha = 0.22f) // warm sun orange/yellow glow
-                } else {
-                    nightGlow.copy(alpha = 0.22f) // cool moon cyan/blue glow
-                }
-                drawCircle(
-                    brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                        colors = listOf(glowColor, Color.Transparent),
-                        center = Offset(size.width * 0.85f, size.height * 0.15f),
-                        radius = size.width * 0.6f
-                    ),
-                    center = Offset(size.width * 0.85f, size.height * 0.15f),
-                    radius = size.width * 0.6f
-                )
-            },
+            .daylightGlowBehind(isDaylight),
         colors = transparentCardColors()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1081,12 +1078,43 @@ private fun SolarDaylightWidget(
                     )
                     if (sunTimes.sunrise != null && sunTimes.sunset != null) {
                         Spacer(Modifier.height(2.dp))
-                        Text(
-                            text = "↑ ${sunTimes.sunrise.format(sunTimeFormatter)}  ↓ ${sunTimes.sunset.format(sunTimeFormatter)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        val sunriseText = sunTimes.sunrise.format(sunTimeFormatter)
+                        val sunsetText = sunTimes.sunset.format(sunTimeFormatter)
+                        // Icons replace the bare ↑/↓ glyphs (which TalkBack reads as ambiguous raw
+                        // characters); a merged summary spells "Sunrise 6:12, sunset 8:47".
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = "Sunrise $sunriseText, sunset $sunsetText"
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.WbSunny,
+                                contentDescription = null,
+                                tint = GlassDefaults.daylightAccent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = sunriseText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Filled.NightsStay,
+                                contentDescription = null,
+                                tint = GlassDefaults.nightAccent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = sunsetText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }
@@ -1126,16 +1154,41 @@ private fun SunTrackCanvas(
     val trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
     val daylightColor = GlassDefaults.daylightAccent.copy(alpha = 0.8f)
     val nightColor = GlassDefaults.nightAccent.copy(alpha = 0.8f)
-    val dotColor = if (sunrise != null && sunset != null && currentTime.isAfter(sunrise) && currentTime.isBefore(sunset)) {
+    val isDaytimeNow = sunrise != null && sunset != null &&
+        currentTime.isAfter(sunrise) && currentTime.isBefore(sunset)
+    val dotColor = if (isDaytimeNow) {
         GlassDefaults.daylightAccent
     } else {
         GlassDefaults.nightAccent
+    }
+
+    // The track is drawn, not typed, so give TalkBack a spoken summary of the daylight phase
+    // and progress instead of a silent Canvas.
+    val trackDescription = remember(sunrise, sunset, currentTime.hour, currentTime.minute, polarDay, polarNight) {
+        when {
+            polarDay -> "Daylight track: Midnight Sun, the sun stays up all day"
+            polarNight -> "Daylight track: Polar Night, the sun stays down all day"
+            sunrise != null && sunset != null -> {
+                val riseMin = sunrise.hour * 60 + sunrise.minute
+                val setMin = sunset.hour * 60 + sunset.minute
+                val currentMin = currentTime.hour * 60 + currentTime.minute
+                if (currentMin in riseMin..setMin) {
+                    val range = setMin - riseMin
+                    val pct = if (range > 0) ((currentMin - riseMin) * 100 / range) else 0
+                    "Daylight track: daytime, $pct percent through daylight"
+                } else {
+                    "Daylight track: nighttime"
+                }
+            }
+            else -> "Daylight track"
+        }
     }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(28.dp)
+            .clearAndSetSemantics { contentDescription = trackDescription }
     ) {
         val width = size.width
         val height = size.height
@@ -1285,7 +1338,9 @@ private fun AgendaItemRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                // 16.dp aligns the agenda row with the sibling glass cards' inner-padding rhythm
+                // (14.dp was off the documented 4/8/12/16/20 scale entirely).
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1297,7 +1352,7 @@ private fun AgendaItemRow(
                 Canvas(modifier = Modifier.size(10.dp)) {
                     drawCircle(color = tagColor)
                 }
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         text = task.title,
@@ -1378,13 +1433,29 @@ private fun WatchlistZoneCard(
     val isDaylight = remember(geoPoint, currentTime.toEpochSecond() / 60) {
         SolarMath.isDaylight(geoPoint.latitude, geoPoint.longitude, currentTime.toInstant())
     }
-    val daylightGlow = GlassDefaults.daylightGlow
-    val nightGlow = GlassDefaults.nightGlow
 
     val favoriteContacts = remember(contacts) { contacts.filter { it.isFavorite } }
     var expanded by remember { mutableStateOf(false) }
     var showAddContactDialog by remember { mutableStateOf(false) }
     val haptics = LocalHapticFeedback.current
+
+    // Merged summary for the collapsed leading Row so TalkBack speaks one status line instead of
+    // stopping on each child (city, time, working-hours, day/night) separately. The working-hours
+    // state rides in stateDescription (below), so it's left out of this content line to avoid a
+    // double read.
+    val dayNightLabel = if (isDaylight) "daytime" else "nighttime"
+    val cardTimeText = zoneTime.format(timeFormatter)
+    val cardSummary = "${zone.displayName}, $cardTimeText, $dayNightLabel"
+
+    // Springy pressed feedback: the default ripple over transparent glass is barely perceptible,
+    // so tapping to expand gets the same tactile scale the drag already provides (drag = 1.04f).
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed && !isDragging) 0.98f else 1f,
+        animationSpec = Motion.snappy(),
+        label = "cardPressScale"
+    )
 
     Box(
         modifier = Modifier
@@ -1396,6 +1467,9 @@ private fun WatchlistZoneCard(
                     scaleY = 1.04f
                     shadowElevation = 24f
                     alpha = 0.93f
+                } else {
+                    scaleX = pressScale
+                    scaleY = pressScale
                 }
             }
     ) {
@@ -1406,6 +1480,8 @@ private fun WatchlistZoneCard(
                 // Holding still and releasing opens the options menu; holding and dragging reorders —
                 // so this card doesn't claim onLongClick itself, which would swallow the drag gesture.
                 .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = null,
                     onClick = { expanded = !expanded },
                     onLongClick = null
                 )
@@ -1417,22 +1493,7 @@ private fun WatchlistZoneCard(
                                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
                     blur = false
                 )
-                .drawBehind {
-                    val glowColor = if (isDaylight) {
-                        daylightGlow.copy(alpha = 0.22f)
-                    } else {
-                        nightGlow.copy(alpha = 0.22f)
-                    }
-                    drawCircle(
-                        brush = androidx.compose.ui.graphics.Brush.radialGradient(
-                            colors = listOf(glowColor, Color.Transparent),
-                            center = Offset(size.width * 0.85f, size.height * 0.15f),
-                            radius = size.width * 0.6f
-                        ),
-                        center = Offset(size.width * 0.85f, size.height * 0.15f),
-                        radius = size.width * 0.6f
-                    )
-                },
+                .daylightGlowBehind(isDaylight),
             colors = transparentCardColors()
         ) {
             Row(
@@ -1443,7 +1504,14 @@ private fun WatchlistZoneCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        // One TalkBack stop for the whole status line; the day/night icon (which
+                        // carried no description) is now spoken as part of this summary.
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = cardSummary
+                            stateDescription = if (isWorkingHours) "Working hours" else "Off hours"
+                        },
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -1452,7 +1520,7 @@ private fun WatchlistZoneCard(
                         tint = if (isDaylight) GlassDefaults.daylightAccent else GlassDefaults.nightAccent,
                         modifier = Modifier.size(20.dp)
                     )
-                    Spacer(Modifier.width(14.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -1477,11 +1545,12 @@ private fun WatchlistZoneCard(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
+                            // Honor the labelSmall (12sp) token so fontScale/Dynamic Type can grow it;
+                            // the old fixed 10.sp fell below the smallest documented step.
                             text = if (isWorkingHours) "Working hours" else "Off hours",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isWorkingHours) MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
-                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            fontSize = 10.sp
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
                         // Favorite contact pills — shown even when card is collapsed
                         if (favoriteContacts.isNotEmpty()) {
@@ -1507,8 +1576,7 @@ private fun WatchlistZoneCard(
                                             Text(
                                                 text = person.name,
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                                fontSize = 10.sp
+                                                color = MaterialTheme.colorScheme.onSecondaryContainer
                                             )
                                         }
                                     }
@@ -1563,7 +1631,9 @@ private fun WatchlistZoneCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 14.dp, end = 14.dp, bottom = 14.dp)
+                        // Match the collapsed row's 16.dp inner padding so the expanded content
+                        // stays on the 4/8/12/16/20 rhythm shared by the sibling glass cards.
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                 ) {
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
@@ -1692,8 +1762,10 @@ private fun WatchlistZoneCard(
                                     Icon(
                                         imageVector = Icons.Filled.Delete,
                                         contentDescription = "Remove contact",
-                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(14.dp)
+                                        // 0.8f alpha clears WCAG-AA over the frosted surface (0.6f
+                                        // was borderline) and 16.dp matches the sibling star icon.
+                                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }

@@ -6,6 +6,31 @@
 import SwiftUI
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Local design tokens (private to this file)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Minimum interactive target sizes. HIG mandates ≥44 pt so touch controls stay
+/// reliably tappable; mirrors Android's 48 dp equivalent.
+private enum MeridianHitTarget {
+    /// Apple HIG minimum touch-target edge (points).
+    static let minimum: CGFloat = 44
+}
+
+/// Shared press-feedback style for glass controls that aren't nav items.
+/// Scales the label down on press with a `Motion.quick()` spring — the same
+/// tactile language as the nav bar's `NavPressStyle`, but reduce-motion aware.
+private struct PressableScaleStyle: ButtonStyle {
+    var reduceMotion: Bool = false
+    var pressedScale: CGFloat = 0.92
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? pressedScale : 1.0)
+            .animation(reduceMotion ? nil : Motion.quick(), value: configuration.isPressed)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MARK: - SectionHeader
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -16,11 +41,12 @@ struct SectionHeader: View {
     var showDivider: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title)
                     .font(.titleMedium)
                     .foregroundStyle(MeridianColors.onSurface)
+                    .accessibilityAddTraits(.isHeader)
 
                 if let subtitle {
                     Spacer()
@@ -34,7 +60,8 @@ struct SectionHeader: View {
                 Rectangle()
                     .fill(Color.white.opacity(0.10))
                     .frame(height: 1)
-                    .padding(.top, 6)
+                    .padding(.top, MeridianSpacing.xs.rawValue)
+                    .accessibilityHidden(true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -51,15 +78,20 @@ struct MeridianChip: View {
     var isSelected: Bool = false
     var action: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var tapCount = 0
+
     var body: some View {
         Button {
+            tapCount &+= 1
             action()
         } label: {
             Text(label)
                 .font(.labelMedium)
                 .foregroundStyle(isSelected ? MeridianColors.background : MeridianColors.onSurfaceVariant)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
+                .padding(.horizontal, MeridianSpacing.md.rawValue)
+                .padding(.vertical, MeridianSpacing.sm.rawValue)
+                .frame(minHeight: MeridianHitTarget.minimum)
                 .background {
                     Capsule()
                         .fill(isSelected
@@ -75,10 +107,12 @@ struct MeridianChip: View {
                                 )
                         }
                 }
+                .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .sensoryFeedback(.selection, trigger: isSelected)
-        .animation(.spring(response: 0.28, dampingFraction: 0.7), value: isSelected)
+        .buttonStyle(PressableScaleStyle(reduceMotion: reduceMotion))
+        .sensoryFeedback(.selection, trigger: tapCount)
+        .animation(reduceMotion ? nil : Motion.snappy(), value: isSelected)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
@@ -95,8 +129,8 @@ struct SettingsCard<Content: View>: View {
             content
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .liquidGlass(cornerRadius: 16)
+        .padding(MeridianSpacing.lg.rawValue)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue)
     }
 }
 
@@ -109,15 +143,20 @@ struct EmptyStateView: View {
     let icon: String
     let title: String
     let message: String
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: MeridianSpacing.lg.rawValue) {
             Image(systemName: icon)
                 .font(.system(size: 48, weight: .light))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(MeridianColors.primary.opacity(0.70))
+                .accessibilityHidden(true)
 
-            VStack(spacing: 6) {
+            VStack(spacing: MeridianSpacing.xs.rawValue + 2) {
                 Text(title)
                     .font(.headlineLarge)
                     .foregroundStyle(MeridianColors.onSurface)
@@ -129,8 +168,23 @@ struct EmptyStateView: View {
                     .multilineTextAlignment(.center)
                     .lineSpacing(3)
             }
+            .accessibilityElement(children: .combine)
+
+            if let actionLabel, let action {
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(.labelMedium)
+                        .foregroundStyle(MeridianColors.onPrimary)
+                        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+                        .padding(.vertical, MeridianSpacing.sm.rawValue)
+                        .frame(minHeight: MeridianHitTarget.minimum)
+                        .background(Capsule().fill(MeridianColors.primary))
+                }
+                .buttonStyle(PressableScaleStyle(reduceMotion: reduceMotion))
+                .accessibilityAddTraits(.isButton)
+            }
         }
-        .padding(32)
+        .padding(MeridianSpacing.xxl.rawValue + MeridianSpacing.sm.rawValue)
         .frame(maxWidth: 320)
     }
 }
@@ -150,11 +204,12 @@ struct PillBadge: View {
             .foregroundStyle(color == MeridianColors.primary
                              ? MeridianColors.background
                              : Color.white)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 4)
+            .padding(.horizontal, MeridianSpacing.sm.rawValue + 1)
+            .padding(.vertical, MeridianSpacing.xs.rawValue)
             .background {
                 Capsule().fill(color)
             }
+            .accessibilityElement(children: .combine)
     }
 }
 
@@ -190,11 +245,12 @@ struct ZoneTimeRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: MeridianSpacing.md.rawValue) {
             Circle()
                 .fill(accent)
                 .frame(width: 8, height: 8)
                 .shadow(color: accent.opacity(0.55), radius: 4)
+                .accessibilityHidden(true)
 
             Text(displayName)
                 .font(.titleMedium)
@@ -203,7 +259,7 @@ struct ZoneTimeRow: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: MeridianSpacing.xs.rawValue - 2) {
                 Text(time)
                     .font(.bodyLarge)
                     .foregroundStyle(MeridianColors.onSurface)
@@ -214,16 +270,111 @@ struct ZoneTimeRow: View {
                     .foregroundStyle(MeridianColors.onSurfaceVariant)
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
+        .padding(.vertical, MeridianSpacing.sm.rawValue + 2)
+        .padding(.horizontal, MeridianSpacing.md.rawValue + 2)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                 .fill(glow.opacity(0.05))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                         .strokeBorder(glow.opacity(0.18), lineWidth: 1)
                 }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(displayName), \(time), \(utcOffset), \(isDaytime ? "daytime" : "nighttime")")
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - ScrollOffsetKey
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Preference key scrollable screens publish so the shell can collapse the tab bar on scroll-down.
+struct ScrollOffsetKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Scroll offset reporting
+// ─────────────────────────────────────────────────────────────────────────────
+
+private struct ScrollOffsetReporter: ViewModifier {
+    let coordinateSpace: String
+
+    func body(content: Content) -> some View {
+        content.background {
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: ScrollOffsetKey.self,
+                    value: geo.frame(in: .named(coordinateSpace)).minY
+                )
+            }
+        }
+    }
+}
+
+extension View {
+    /// Publishes this view's vertical offset inside `coordinateSpace` for tab-bar collapse.
+    func reportScrollOffset(in coordinateSpace: String) -> some View {
+        modifier(ScrollOffsetReporter(coordinateSpace: coordinateSpace))
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - EmptyStateCard
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Inline empty-state card with an optional call-to-action button.
+struct EmptyStateCard: View {
+    let icon: String
+    let title: String
+    let message: String
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: MeridianSpacing.sm.rawValue) {
+            Image(systemName: icon)
+                .font(.system(size: 36, weight: .light))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(MeridianColors.primary.opacity(0.5))
+                .accessibilityHidden(true)
+
+            VStack(spacing: MeridianSpacing.xs.rawValue) {
+                Text(title)
+                    .font(.titleMedium)
+                    .foregroundStyle(MeridianColors.onSurface)
+
+                Text(message)
+                    .font(.bodyMedium)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+            }
+            .accessibilityElement(children: .combine)
+
+            if let actionLabel, let action {
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(.labelMedium)
+                        .foregroundStyle(MeridianColors.onPrimary)
+                        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+                        .padding(.vertical, MeridianSpacing.sm.rawValue)
+                        .frame(minHeight: MeridianHitTarget.minimum)
+                        .background(Capsule().fill(MeridianColors.primary))
+                }
+                .buttonStyle(PressableScaleStyle(reduceMotion: reduceMotion))
+                .accessibilityAddTraits(.isButton)
+                .padding(.top, MeridianSpacing.xs.rawValue)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(MeridianSpacing.xl.rawValue)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue)
     }
 }
 

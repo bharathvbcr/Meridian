@@ -43,6 +43,14 @@ struct AddPersonSheet: View {
     @State private var dndStart = 22
     @State private var dndEnd = 7
     @State private var searchTask: Task<Void, Never>? = nil
+    @State private var showContactPicker = false
+    @State private var isSearching = false
+    @State private var didConfirm = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Spring used for content reveals; collapses to no animation under Reduce Motion.
+    private var revealAnimation: Animation? { reduceMotion ? nil : Motion.snappy() }
 
     init(
         searchZones: @escaping (String) async -> [ZoneMatch],
@@ -74,19 +82,37 @@ struct AddPersonSheet: View {
                 }
 
                 Section("Name") {
-                    TextField("Name (optional)", text: $name)
-                        .textInputAutocapitalization(.words)
+                    HStack(spacing: 8) {
+                        TextField("Name (optional)", text: $name)
+                            .textInputAutocapitalization(.words)
+                        // Pull the name from system contacts (Android: trailing person
+                        // icon → ActivityResultContracts.PickContact). Zone stays manual.
+                        Button {
+                            showContactPicker = true
+                        } label: {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .font(.system(size: 18))
+                                .foregroundStyle(MeridianColors.primary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Pick from contacts")
+                        .accessibilityHint("Fill the name from a system contact")
+                    }
                 }
 
-                Section("City / time zone") {
+                Section {
                     if let zone = pickedZone {
-                        HStack {
-                            VStack(alignment: .leading) {
+                        HStack(spacing: MeridianSpacing.sm.rawValue) {
+                            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
                                 Text(zone.displayName).fontWeight(.bold)
                                 Text(zone.zoneId)
                                     .font(.bodyMedium)
                                     .foregroundStyle(MeridianColors.onSurfaceVariant)
                             }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Selected city, \(zone.displayName), \(zone.zoneId)")
                             Spacer()
                             Button {
                                 pickedZone = nil
@@ -94,8 +120,12 @@ struct AddPersonSheet: View {
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
                                     .foregroundStyle(MeridianColors.onSurfaceVariant)
+                                    .frame(width: 44, height: 44)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Clear selected city")
+                            .accessibilityHint("Search for a different city")
                         }
                     } else {
                         TextField("Search city or time zone", text: $zoneQuery)
@@ -106,14 +136,38 @@ struct AddPersonSheet: View {
                                 pickedZone = zone
                                 results = []
                             } label: {
-                                VStack(alignment: .leading) {
+                                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
                                     Text(zone.displayName).fontWeight(.semibold)
                                     Text(zone.zoneId)
                                         .font(.bodyMedium)
                                         .foregroundStyle(MeridianColors.onSurfaceVariant)
                                 }
                             }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityHint("Select this city")
                         }
+                        if !zoneQuery.trimmingCharacters(in: .whitespaces).isEmpty
+                            && results.isEmpty && !isSearching {
+                            Label {
+                                Text("No matching cities")
+                                    .font(.bodyMedium)
+                                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                            } icon: {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                                    .accessibilityHidden(true)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("No matching cities. Try another name.")
+                        }
+                    }
+                } header: {
+                    Text("City / time zone")
+                } footer: {
+                    if !canConfirm {
+                        Text("Pick a city to continue.")
+                            .font(.labelMedium)
+                            .foregroundStyle(MeridianColors.onSurfaceVariant)
                     }
                 }
 
@@ -128,13 +182,26 @@ struct AddPersonSheet: View {
                     }
                     Section {
                         Toggle("Do not disturb", isOn: $dndEnabled)
+                            .tint(MeridianColors.primary)
+                            .accessibilityHint("Silence notifications during set hours")
                         if dndEnabled {
                             HourStepperRow(label: "DND start", hour: $dndStart)
                             HourStepperRow(label: "DND end", hour: $dndEnd)
                         }
+                    } footer: {
+                        if dndEnabled {
+                            Text("Notifications are muted between these hours in this person's local time.")
+                                .font(.labelMedium)
+                                .foregroundStyle(MeridianColors.onSurfaceVariant)
+                        }
                     }
                 }
             }
+            .animation(revealAnimation, value: pickedZone)
+            .animation(revealAnimation, value: results)
+            .animation(revealAnimation, value: isSearching)
+            .animation(revealAnimation, value: dndEnabled)
+            .animation(revealAnimation, value: trimmedName.isEmpty)
             .navigationTitle("Add participant")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -142,30 +209,42 @@ struct AddPersonSheet: View {
                     Button("Cancel", action: onDismiss)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(confirmTitle, action: confirm).disabled(!canConfirm)
+                    Button(confirmTitle, action: confirm)
+                        .fontWeight(.semibold)
+                        .disabled(!canConfirm)
+                        .accessibilityHint(canConfirm ? "" : "Select a city first")
                 }
             }
         }
         .preferredColorScheme(.dark)
         .presentationDetents([.large])
+        .sensoryFeedback(.success, trigger: didConfirm)
+        .sheet(isPresented: $showContactPicker) {
+            ContactPicker { pickedName in
+                name = pickedName
+            }
+        }
     }
 
     private func runSearch(_ query: String) {
         pickedZone = nil
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { results = []; return }
+        guard !trimmed.isEmpty else { results = []; isSearching = false; return }
+        isSearching = true
         searchTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120)) // debounce
             guard !Task.isCancelled else { return }
             let hits = await searchZones(trimmed)
             guard !Task.isCancelled else { return }
             results = hits
+            isSearching = false
         }
     }
 
     private func confirm() {
         guard let zone = pickedZone else { return }
+        didConfirm.toggle()
         if trimmedName.isEmpty {
             onConfirm(.city(zoneId: zone.zoneId, displayName: zone.displayName))
         } else {
@@ -192,6 +271,8 @@ struct HourStepperRow: View {
     @Binding var hour: Int
     var onChange: (Int) -> Void = { _ in }
 
+    private var formattedHour: String { String(format: "%02d:00", hour) }
+
     var body: some View {
         HStack {
             Text(label).foregroundStyle(MeridianColors.onSurface)
@@ -207,15 +288,19 @@ struct HourStepperRow: View {
                 ),
                 in: 0...23
             ) {
-                Text(String(format: "%02d:00", hour))
+                Text(formattedHour)
                     .monospacedDigit()
                     .foregroundStyle(MeridianColors.onSurface)
             }
             .labelsHidden()
-            Text(String(format: "%02d:00", hour))
+            .tint(MeridianColors.primary)
+            .accessibilityLabel(label)
+            .accessibilityValue(formattedHour)
+            Text(formattedHour)
                 .monospacedDigit()
-                .frame(width: 56, alignment: .trailing)
+                .frame(minWidth: 56, alignment: .trailing)
                 .foregroundStyle(MeridianColors.onSurface)
+                .accessibilityHidden(true)
         }
     }
 }

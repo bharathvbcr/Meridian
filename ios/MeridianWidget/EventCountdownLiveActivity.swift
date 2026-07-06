@@ -56,9 +56,20 @@ struct EventCountdownLiveActivity: Widget {
                         .foregroundStyle(LiveActivityPalette.onSurface)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Starts \(context.state.eventDate, style: .time)")
-                        .font(.caption)
-                        .foregroundStyle(LiveActivityPalette.onSurfaceVariant)
+                    VStack(spacing: 4) {
+                        // Determinate progress across the 24 h approach window — the
+                        // system advances it (Android: setProgress on the notification).
+                        ProgressView(timerInterval: progressInterval(for: context), countsDown: false) {
+                            EmptyView()
+                        } currentValueLabel: {
+                            EmptyView()
+                        }
+                        .progressViewStyle(.linear)
+                        .tint(LiveActivityPalette.primary)
+                        Text("Starts \(context.state.eventDate, style: .time)")
+                            .font(.caption)
+                            .foregroundStyle(LiveActivityPalette.onSurfaceVariant)
+                    }
                 }
             } compactLeading: {
                 Image(systemName: "calendar.badge.clock")
@@ -86,6 +97,20 @@ struct EventCountdownLiveActivity: Widget {
         let lower = min(Date.now, start)
         return lower...max(start, lower.addingTimeInterval(1))
     }
+
+    /// The 24 h approach window the progress bar fills across (Android:
+    /// `LIVE_WINDOW_MILLIS` elapsed fraction).
+    private func progressInterval(
+        for context: ActivityViewContext<EventCountdownAttributes>
+    ) -> ClosedRange<Date> {
+        liveActivityProgressInterval(eventDate: context.state.eventDate)
+    }
+}
+
+/// Shared 24 h progress window helper (lock screen + Dynamic Island).
+private func liveActivityProgressInterval(eventDate: Date) -> ClosedRange<Date> {
+    let end = max(eventDate, Date.now.addingTimeInterval(1))
+    return end.addingTimeInterval(-24 * 3600)...end
 }
 
 // MARK: - Lock screen view
@@ -120,7 +145,24 @@ private struct LockScreenView: View {
                 .foregroundStyle(LiveActivityPalette.primary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.top, 12)
+        .safeAreaInset(edge: .bottom) {
+            // Determinate progress across the 24 h approach window (Android: the
+            // ongoing notification's progress bar).
+            ProgressView(
+                timerInterval: liveActivityProgressInterval(eventDate: context.state.eventDate),
+                countsDown: false
+            ) {
+                EmptyView()
+            } currentValueLabel: {
+                EmptyView()
+            }
+            .progressViewStyle(.linear)
+            .tint(LiveActivityPalette.primary)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+            .padding(.top, 6)
+        }
     }
 
     private var interval: ClosedRange<Date> {

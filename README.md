@@ -46,8 +46,9 @@ The deterministic time/solar/fairness/rotation engine in `core/time` is unit-tes
 
 ## Run locally
 
-**Prerequisites:** JDK 17+ and the Android SDK (compileSdk 36), with `ANDROID_HOME` (or a
-`local.properties` with `sdk.dir`) configured. minSdk 26.
+**Prerequisites:** JDK 21+ (required for unit tests on compileSdk 36) and the Android SDK
+(compileSdk 36), with `ANDROID_HOME` (or a `local.properties` with `sdk.dir`) configured.
+minSdk 26. Use `make build-all` or `./scripts/build-all.sh` to build Android and iOS together.
 
 ```bash
 ./gradlew :app:assembleDebug        # build the debug APK

@@ -1,5 +1,6 @@
 package com.example.core.ai
 
+import android.content.Context
 import com.example.core.data.PlannedTask
 import com.example.core.data.Person
 import com.example.core.data.SavedZone
@@ -36,9 +37,8 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 sealed class AiResult {
-    /** [onDevice] reflects where inference actually ran — true for Gemini Nano, false for cloud. */
-    data class Success(val response: String, val onDevice: Boolean) : AiResult()
-    data class Scheduled(val task: PlannedTask, val onDevice: Boolean) : AiResult()
+    data class Success(val response: String, val provenance: AiProvenance) : AiResult()
+    data class Scheduled(val task: PlannedTask, val provenance: AiProvenance) : AiResult()
     data class Error(val message: String) : AiResult()
 }
 
@@ -64,7 +64,13 @@ sealed class AiResult {
  * path. Only the first [FeatureStatus.AVAILABLE] model is used.
  */
 @OptIn(PublicPreviewAPI::class)
-class GeminiRepository(private val tools: MeridianAiTools) {
+class GeminiRepository(
+    private val tools: MeridianAiTools,
+    context: Context,
+    private val semanticCache: SemanticCache = SemanticCache(),
+    private val resourcePolicy: AiResourcePolicy = AiResourcePolicy(context),
+    private val aiEngineProvider: () -> AiEngine = { AiEngine.ON_DEVICE },
+) {
 
     // Tool schemas advertised to the model (used by the cloud path; harmlessly ignored on-device).
     private val functionTools: List<Tool> = listOf(Tool.functionDeclarations(tools.functionDeclarations()))
@@ -113,57 +119,176 @@ class GeminiRepository(private val tools: MeridianAiTools) {
         return buildModel(OnDeviceModelOption.PREVIEW)
     }
 
+    /** Pre-warms the on-device KV cache when resources allow. Safe to call repeatedly. */
+    suspend fun prewarm() {
+        if (resourcePolicy.skipPrewarm()) return
+        if (aiEngineProvider() != AiEngine.ON_DEVICE) return
+        resolveOnDeviceModel()
+    }
+
+    /** Releases the cached on-device model — call on background / memory pressure. */
+    suspend fun releaseOnDeviceModel() {
+        onDeviceMutex.withLock {
+            cachedOnDeviceModel = null
+            onDeviceResolved = false
+        }
+    }
+
     suspend fun processUserPrompt(
         prompt: String,
         homeZoneId: String = ZoneId.systemDefault().id,
         savedZones: List<SavedZone> = emptyList(),
         people: List<Person> = emptyList(),
+        recentTurns: List<ChatTurn> = emptyList(),
+        onPartial: suspend (String) -> Unit = {},
     ): AiResult = withContext(Dispatchers.IO) {
+        val startedAt = System.currentTimeMillis()
         val zone = runCatching { ZoneId.of(homeZoneId) }.getOrDefault(ZoneId.systemDefault())
         val currentTime = ZonedDateTime.now(zone)
+        val groundingKey = SemanticCachePolicy.groundingKey(currentTime.toInstant().toEpochMilli(), homeZoneId)
         val grounding = runCatching {
             tools.buildGrounding(prompt, zone.id, savedZones, people)
         }.getOrDefault(AiGrounding("", AiQueryIntent.GENERAL))
+
+        // Semantic cache — instant replay for near-duplicate prompts (<15 ms).
+        if (!SemanticCachePolicy.shouldBypass(grounding.intent, prompt)) {
+            semanticCache.lookup(prompt, groundingKey)?.let { hit ->
+                onPartial(hit.response)
+                val result = interpretCandidate(
+                    text = hit.response,
+                    provenance = hit.provenance,
+                    prompt = prompt,
+                    currentTime = currentTime,
+                    zone = zone,
+                    groundingKey = groundingKey,
+                )
+                logResult("cache", result, startedAt)
+                return@withContext result
+            }
+        }
+
+        val compressedBlock = SemanticCompressor.compress(grounding.block)
+        val routedGrounding = grounding.copy(block = compressedBlock)
+
+        // Semantic router — skip the LLM when grounding already holds the answer.
+        val routeToRules = SemanticRouter.route(grounding.intent, prompt, compressedBlock) == SemanticRoute.RULES
+            || resourcePolicy.preferRulesOnly()
+        if (routeToRules) {
+            val ruleText = RulesEngine.answer(prompt, routedGrounding, zone, currentTime)
+            emitProgressivePartial(ruleText, onPartial)
+            val result = interpretCandidate(
+                text = ruleText,
+                provenance = AiProvenance.RULES,
+                prompt = prompt,
+                currentTime = currentTime,
+                zone = zone,
+                storeInCache = !SemanticCachePolicy.shouldBypass(grounding.intent, prompt),
+                groundingKey = groundingKey,
+            )
+            logResult("rules", result, startedAt)
+            return@withContext result
+        }
+
+        if (resourcePolicy.skipLlm()) {
+            val ruleText = RulesEngine.answer(prompt, routedGrounding, zone, currentTime)
+            emitProgressivePartial(ruleText, onPartial)
+            val result = interpretCandidate(
+                text = ruleText,
+                provenance = AiProvenance.RULES,
+                prompt = prompt,
+                currentTime = currentTime,
+                zone = zone,
+                storeInCache = false,
+                groundingKey = groundingKey,
+            )
+            logResult("rules-degraded", result, startedAt)
+            return@withContext result
+        }
+
         // The live-clock facts ride in the PROMPT, not the system instruction: on-device Gemini Nano
         // acts on the message text and effectively ignores the system instruction, so facts placed
         // only there never reach it (it then answers "I have no real-time information"). Putting them
         // in the prompt reaches both paths; the cloud path can still call tools for anything more.
-        val modelPrompt = buildContextualPrompt(grounding, currentTime, zone, prompt)
+        val modelPrompt = buildContextualPrompt(routedGrounding, currentTime, zone, prompt, recentTurns)
 
         try {
-            // On-device path: ML Kit Prompt API with prefix caching. systemPromptPrefix is the
-            // cached PromptPrefix (processed once); modelPrompt is the dynamic suffix per request.
-            // Falls back to null when no Nano build is available on this device.
-            val onDeviceText = tryOnDeviceInference(modelPrompt)
-            val (candidateText, onDevice) = if (onDeviceText != null) {
-                onDeviceText to true
-            } else {
-                // Cloud/Firebase fallback: function calling enabled, auto-falls-back to cloud.
-                val model = selectModel()
-                runWithTools(model, modelPrompt)
-                    ?: return@withContext AiResult.Error("No response received from the assistant model.")
+            val engine = aiEngineProvider()
+            val (candidateText, provenance) = when (engine) {
+                AiEngine.CLOUD -> {
+                    val model = selectModel()
+                    val cloudResult = runWithTools(model, modelPrompt)
+                        ?: return@withContext AiResult.Error("No response received from the assistant model.")
+                    cloudResult.first to AiProvenance.CLOUD
+                }
+                AiEngine.ON_DEVICE -> {
+                    val onDeviceText = tryOnDeviceInference(modelPrompt)
+                    if (onDeviceText != null) {
+                        onPartial(onDeviceText)
+                        onDeviceText to AiProvenance.ON_DEVICE
+                    } else {
+                        val model = selectModel()
+                        val cloudResult = runWithTools(model, modelPrompt)
+                            ?: return@withContext AiResult.Error("No response received from the assistant model.")
+                        onPartial(cloudResult.first)
+                        cloudResult.first to if (cloudResult.second) AiProvenance.ON_DEVICE else AiProvenance.CLOUD
+                    }
+                }
             }
 
-            // A schedule request comes back as a JSON block (works on every inference path). The app
-            // resolves its date/time itself (§12.7) so a weak on-device model can't pick a wrong time.
-            val scheduleJson = ScheduleParser.extractScheduleJson(candidateText)
-            if (scheduleJson != null) {
-                ScheduleParser.buildScheduledTask(
-                    scheduleJson, prompt, currentTime.toInstant(), zone.id,
-                    resolveZoneId = { tools.resolveZoneId(it) },
-                )?.let { return@withContext AiResult.Scheduled(it, onDevice) }
-                // It was a scheduling request but no date/time could be resolved — ask, don't dump JSON.
-                val title = ScheduleParser.titleOf(scheduleJson)
-                return@withContext AiResult.Success(
-                    "Sure — what date and time should I set${title?.let { " for \"$it\"" } ?: ""}?",
-                    onDevice,
-                )
-            }
-
-            AiResult.Success(candidateText, onDevice)
+            val result = interpretCandidate(
+                text = candidateText,
+                provenance = provenance,
+                prompt = prompt,
+                currentTime = currentTime,
+                zone = zone,
+                storeInCache = !SemanticCachePolicy.shouldBypass(grounding.intent, prompt),
+                groundingKey = groundingKey,
+            )
+            logResult("llm", result, startedAt)
+            result
         } catch (e: Exception) {
             AiResult.Error(e.message ?: "Unknown error occurred running the Gemini Nano assistant.")
         }
+    }
+
+    private fun logResult(path: String, result: AiResult, startedAt: Long) {
+        val provenance = when (result) {
+            is AiResult.Success -> result.provenance
+            is AiResult.Scheduled -> result.provenance
+            is AiResult.Error -> return
+        }
+        AiTelemetry.logInference(path, provenance, System.currentTimeMillis() - startedAt)
+    }
+
+    /** Shared post-processing for cache, rules, and model paths. */
+    private suspend fun interpretCandidate(
+        text: String,
+        provenance: AiProvenance,
+        prompt: String,
+        currentTime: ZonedDateTime,
+        zone: ZoneId,
+        storeInCache: Boolean = false,
+        groundingKey: Long = SemanticCachePolicy.groundingKey(
+            currentTime.toInstant().toEpochMilli(),
+            zone.id,
+        ),
+    ): AiResult {
+        val scheduleJson = ScheduleParser.extractScheduleJson(text)
+        if (scheduleJson != null) {
+            ScheduleParser.buildScheduledTask(
+                scheduleJson, prompt, currentTime.toInstant(), zone.id,
+                resolveZoneId = { tools.resolveZoneId(it) },
+            )?.let { task ->
+                if (storeInCache) semanticCache.store(prompt, text, provenance, groundingKey)
+                return AiResult.Scheduled(task, provenance)
+            }
+            val title = ScheduleParser.titleOf(scheduleJson)
+            val ask = "Sure — what date and time should I set${title?.let { " for \"$it\"" } ?: ""}?"
+            if (storeInCache) semanticCache.store(prompt, ask, provenance, groundingKey)
+            return AiResult.Success(ask, provenance)
+        }
+        if (storeInCache) semanticCache.store(prompt, text, provenance, groundingKey)
+        return AiResult.Success(text, provenance)
     }
 
     /**
@@ -263,7 +388,9 @@ class GeminiRepository(private val tools: MeridianAiTools) {
         currentTime: ZonedDateTime,
         zone: ZoneId,
         prompt: String,
+        recentTurns: List<ChatTurn>,
     ): String = buildString {
+        appendRecentTurns(recentTurns)
         if (grounding.block.isNotEmpty()) {
             appendLine(grounding.block)
             appendLine()
@@ -291,6 +418,15 @@ class GeminiRepository(private val tools: MeridianAiTools) {
         }
         appendLine()
         append(prompt)
+    }
+
+    private fun StringBuilder.appendRecentTurns(recentTurns: List<ChatTurn>) {
+        if (recentTurns.isEmpty()) return
+        appendLine("RECENT CONVERSATION (for context only — answer the latest user message):")
+        for (turn in recentTurns) {
+            appendLine("${turn.role}: ${turn.text}")
+        }
+        appendLine()
     }
 
     private companion object {

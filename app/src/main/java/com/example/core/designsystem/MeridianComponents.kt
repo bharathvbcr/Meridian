@@ -4,8 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
@@ -35,6 +42,24 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
+
+/**
+ * Private dimension tokens local to this design-system file. They mirror the Meridian spacing /
+ * sizing scale (4 / 8 / 12 / 20 / 24 spacing; 48dp minimum touch target) so component internals
+ * reference a named token instead of a bare literal, keeping this file self-consistent with the
+ * shared scale without adding to any external token file.
+ */
+private val SpacingHairline: Dp = 2.dp
+private val SpacingXSmall: Dp = 4.dp
+private val SpacingSmall: Dp = 8.dp
+private val SpacingMedium: Dp = 12.dp
+private val SpacingLarge: Dp = 16.dp
+
+/** Standard leading-icon size for section / card headers on the Meridian scale. */
+private val HeaderIconSize: Dp = 20.dp
+
+/** Android minimum accessible touch target (Material a11y guidance). */
+private val MinTouchTarget: Dp = 48.dp
 
 /**
  * Shared FilterChip color recipe used by every selectable chip in the app
@@ -55,6 +80,10 @@ fun meridianFilterChipColors(): SelectableChipColors {
  * Unified selectable filter chip. Merges the byte-identical HourCycleChip / MapStyleChip
  * composables: a [FilterChip] with a LongPress haptic on click, a text label and the shared
  * [meridianFilterChipColors] recipe.
+ *
+ * [leadingIcon] optionally renders a leading icon that appears only while [selected] (the standard
+ * Material filter-chip affordance). Routing the raw QuickZoneChips through this overload gives every
+ * selectable chip identical haptic feedback and unified selected semantics for TalkBack.
  */
 @Composable
 fun MeridianFilterChip(
@@ -62,6 +91,8 @@ fun MeridianFilterChip(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leadingIcon: ImageVector? = null,
+    leadingIconContentDescription: String? = null,
 ) {
     val haptics = LocalHapticFeedback.current
     FilterChip(
@@ -72,6 +103,17 @@ fun MeridianFilterChip(
         },
         label = { Text(label) },
         colors = meridianFilterChipColors(),
+        leadingIcon = if (selected && leadingIcon != null) {
+            {
+                Icon(
+                    imageVector = leadingIcon,
+                    contentDescription = leadingIconContentDescription,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            }
+        } else {
+            null
+        },
         modifier = modifier,
     )
 }
@@ -98,23 +140,25 @@ fun SectionHeader(
     iconTint: Color = MaterialTheme.colorScheme.primary,
     dividerColor: Color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
 ) {
-    Column(modifier = modifier) {
+    Column(
+        modifier = modifier.semantics(mergeDescendants = true) { heading() },
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Icon(
                     imageVector = icon,
                     contentDescription = iconContentDescription,
                     tint = iconTint,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(HeaderIconSize),
                 )
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(SpacingSmall))
             }
             Text(
                 text = title,
                 style = style,
                 fontWeight = fontWeight,
                 color = titleColor,
-                modifier = Modifier.padding(end = 12.dp),
+                modifier = Modifier.padding(end = SpacingMedium),
             )
             HorizontalDivider(
                 color = dividerColor,
@@ -122,6 +166,7 @@ fun SectionHeader(
             )
         }
         if (subtitle != null) {
+            Spacer(Modifier.height(SpacingXSmall))
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
@@ -146,10 +191,10 @@ fun SettingsCard(
         hazeState = hazeState,
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = SpacingLarge, vertical = SpacingXSmall),
         shape = GlassDefaults.cardShape,
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(SpacingLarge)) {
             content()
         }
     }
@@ -176,7 +221,7 @@ fun PlannerCard(
         colors = transparentCardColors(),
         modifier = modifier,
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(SpacingLarge)) {
             content()
         }
     }
@@ -195,14 +240,17 @@ fun CardHeader(
     modifier: Modifier = Modifier,
     iconContentDescription: String? = null,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier.semantics(mergeDescendants = true) { heading() },
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = iconContentDescription,
             tint = tint,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(HeaderIconSize),
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(SpacingSmall))
         if (subtitle == null) {
             Text(
                 text = title,
@@ -244,9 +292,11 @@ fun HourStepperRow(
     valueFontWeight: FontWeight = FontWeight.Bold,
     iconSize: androidx.compose.ui.unit.Dp = 18.dp,
 ) {
+    val hour = value.coerceIn(0, 23)
+    val valueText = "%02d:00".format(hour)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.padding(vertical = 2.dp),
+        modifier = modifier.padding(vertical = SpacingHairline),
     ) {
         Text(
             text = label,
@@ -259,18 +309,26 @@ fun HourStepperRow(
                 onChange((value - 1).coerceAtLeast(0))
             },
             enabled = value > 0,
+            // Guarantee the Android 48dp accessible target even under the row's compact padding.
+            modifier = Modifier.sizeIn(minWidth = MinTouchTarget, minHeight = MinTouchTarget),
         ) {
             Icon(
                 Icons.Default.Remove,
-                contentDescription = "Decrease hour",
+                contentDescription = "Decrease $label",
                 tint = tint,
                 modifier = Modifier.size(iconSize),
             )
         }
         Text(
-            text = "%02d:00".format(value.coerceIn(0, 23)),
+            text = valueText,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = valueFontWeight,
+            // Announce the label with the value ("Day start, 07:00") so the live-region update
+            // after each step gives TalkBack meaningful context, not a bare time.
+            modifier = Modifier.semantics {
+                liveRegion = LiveRegionMode.Polite
+                contentDescription = "$label, $valueText"
+            },
         )
         IconButton(
             onClick = {
@@ -278,10 +336,11 @@ fun HourStepperRow(
                 onChange((value + 1).coerceAtMost(23))
             },
             enabled = value < 23,
+            modifier = Modifier.sizeIn(minWidth = MinTouchTarget, minHeight = MinTouchTarget),
         ) {
             Icon(
                 Icons.Default.Add,
-                contentDescription = "Increase hour",
+                contentDescription = "Increase $label",
                 tint = tint,
                 modifier = Modifier.size(iconSize),
             )

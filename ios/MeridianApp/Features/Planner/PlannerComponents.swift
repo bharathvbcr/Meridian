@@ -25,19 +25,27 @@ private let durationStep = 15
 private let durationMin = 15
 private let durationMax = 480
 
+// MARK: - Shared card constants
+
+/// Canonical intra-card hairline weight — matches `SectionHeader`'s divider so glass cards on the
+/// Plan tab share one internal rule weight on `#0F172A` instead of drifting (0.08 / 0.10 / 0.15).
+private let plannerCardDividerColor = Color.white.opacity(0.10)
+
 // MARK: - PlannerHeaderView
 
 struct PlannerHeaderView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("Plan a meeting")
-                .font(.system(size: 36, weight: .black))
+                .font(.displayMedium)
                 .foregroundStyle(MeridianColors.onBackground)
             Text("Pick who's in, when to look, and how long. Meridian finds a fair time.")
                 .font(.bodyMedium)
                 .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -49,16 +57,13 @@ struct SectionLabel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(label)
-                    .font(.labelMedium)
-                    .foregroundStyle(MeridianColors.primary)
-                Spacer()
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
-                    .multilineTextAlignment(.trailing)
-            }
+            Text(label)
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.primary)
+            Text(subtitle)
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+                .fixedSize(horizontal: false, vertical: true)
             Rectangle()
                 .fill(MeridianColors.primary.opacity(0.15))
                 .frame(height: 1)
@@ -66,6 +71,8 @@ struct SectionLabel: View {
         }
         .padding(.top, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -81,19 +88,21 @@ struct DetailsCard: View {
                     .font(.titleMedium)
                     .foregroundStyle(MeridianColors.onSurface)
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityAddTraits(.isHeader)
                 TextField("e.g. Design Sync", text: $title)
                     .font(.bodyLarge)
                     .foregroundStyle(MeridianColors.onSurface)
                     .tint(MeridianColors.primary)
                     .padding(.horizontal, 12).padding(.vertical, 10)
                     .background {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                             .fill(MeridianColors.surface.opacity(0.7))
                             .overlay {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                                     .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
                             }
                     }
+                    .accessibilityLabel("Meeting title")
             }
         }
     }
@@ -107,6 +116,8 @@ struct WindowCard: View {
     @Binding var durationMinutes: Int
     @Binding var excludeWeekends: Bool
     let onJumpTapped: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var customMode = false
     @State private var feedbackTick = 0
@@ -133,6 +144,7 @@ struct WindowCard: View {
                     .font(.titleMedium)
                     .foregroundStyle(MeridianColors.onSurface)
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityAddTraits(.isHeader)
                 Spacer().frame(height: 12)
 
                 dateRow
@@ -169,9 +181,11 @@ struct WindowCard: View {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Previous day")
 
             // Compact DatePicker is the primary day control; the arrows step ±1 day. Editing it in
             // UTC (via `dateBinding`) keeps the stored UTC-midnight epoch aligned with Android.
@@ -190,9 +204,11 @@ struct WindowCard: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Next day")
         }
     }
 
@@ -216,13 +232,15 @@ struct WindowCard: View {
             Spacer()
             Button {
                 feedbackTick += 1
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                withAnimation(reduceMotion ? nil : Motion.snappy()) {
                     selectedDateMillis = Self.todayMillis
                 }
             } label: {
                 Label("Back to today", systemImage: "calendar.badge.clock")
                     .font(.labelMedium)
                     .foregroundStyle(MeridianColors.primary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             Spacer()
@@ -238,10 +256,10 @@ struct WindowCard: View {
             Label("Jump to place & time…", systemImage: "clock.arrow.2.circlepath")
                 .font(.bodyLarge)
                 .foregroundStyle(MeridianColors.primary)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .padding(.vertical, 11)
                 .background {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                         .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
                 }
         }
@@ -284,8 +302,11 @@ struct WindowCard: View {
                             )
                         }
                 }
+                .frame(minHeight: 44)
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
     private var customStepper: some View {
@@ -372,9 +393,25 @@ struct ParticipantsCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 header
                 if !hasFavorites {
-                    Text("Add cities and people here, or star them on World Clock or Now.")
-                        .font(.bodyMedium)
-                        .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Add cities and people here, or star them on World Clock or Now.")
+                            .font(.bodyMedium)
+                            .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+                        Button {
+                            feedbackTick += 1
+                            onAddTapped()
+                        } label: {
+                            Text("Add participant")
+                                .font(.labelMedium)
+                                .foregroundStyle(MeridianColors.onPrimary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .frame(minHeight: 44)
+                                .background(Capsule().fill(MeridianColors.primary))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 chipFlow
             }
@@ -388,6 +425,7 @@ struct ParticipantsCard: View {
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(MeridianColors.primary)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Participants").font(.titleMedium).fontWeight(.bold)
                         .foregroundStyle(MeridianColors.onSurface)
@@ -395,6 +433,8 @@ struct ParticipantsCard: View {
                         .font(.bodyMedium)
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.55))
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
             }
             Spacer()
             if hasFavorites {
@@ -409,8 +449,11 @@ struct ParticipantsCard: View {
                     Text(allSelected ? "None" : "All")
                         .font(.labelMedium)
                         .foregroundStyle(MeridianColors.primary)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityHint(allSelected ? "Deselects all participants" : "Selects all participants")
             }
         }
     }
@@ -423,7 +466,11 @@ struct ParticipantsCard: View {
                 .foregroundStyle(MeridianColors.onPrimary)
                 .lineLimit(1)
                 .padding(.horizontal, 12).padding(.vertical, 7)
+                .frame(minHeight: 44)
                 .background { Capsule().fill(MeridianColors.primary) }
+                .accessibilityElement()
+                .accessibilityLabel("You, \(localLocationName)")
+                .accessibilityAddTraits(.isSelected)
 
             ForEach(locationGroups) { group in
                 groupChip(group)
@@ -437,11 +484,14 @@ struct ParticipantsCard: View {
                     .font(.labelMedium)
                     .foregroundStyle(MeridianColors.primary)
                     .padding(.horizontal, 12).padding(.vertical, 7)
+                    .frame(minHeight: 44)
                     .background {
                         Capsule().strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
                     }
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
+            .accessibilityHint("Adds a participant")
         }
     }
 
@@ -513,10 +563,20 @@ struct ParticipantsCard: View {
                         )
                     }
             }
+            .frame(minHeight: 44)
             .contentShape(Capsule())
             .onTapGesture {
                 feedbackTick += 1
                 action()
+            }
+            .accessibilityElement()
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+            .accessibilityHint("Toggles this participant")
+            .accessibilityActions {
+                if let onDelete {
+                    Button("Remove", role: .destructive) { onDelete() }
+                }
             }
             .contextMenu {
                 if let onDelete {
@@ -532,6 +592,8 @@ struct ParticipantsCard: View {
 
 struct SlotsEmptyState: View {
     let hint: String
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
 
     var body: some View {
         GlassCard(cornerRadius: 20, padding: 20) {
@@ -540,6 +602,7 @@ struct SlotsEmptyState: View {
                     .font(.system(size: 40, weight: .light))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.3))
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityHidden(true)
                 Text("No workable slots on this day")
                     .font(.titleMedium)
                     .fontWeight(.bold)
@@ -549,6 +612,21 @@ struct SlotsEmptyState: View {
                     .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
                     .multilineTextAlignment(.center)
+
+                if let actionLabel, let action {
+                    Button(action: action) {
+                        Text(actionLabel)
+                            .font(.labelMedium)
+                            .foregroundStyle(MeridianColors.onPrimary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .frame(minHeight: 44)
+                            .background(Capsule().fill(MeridianColors.primary))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
             }
             .frame(maxWidth: .infinity)
         }
@@ -572,6 +650,7 @@ struct CalendarEventsCard: View {
                     .font(.titleMedium)
                     .foregroundStyle(MeridianColors.onSurface)
                     .symbolRenderingMode(.hierarchical)
+                    .accessibilityAddTraits(.isHeader)
 
                 if !hasPermission {
                     Text("Allow calendar access to see your upcoming events alongside meeting slots.")
@@ -581,10 +660,10 @@ struct CalendarEventsCard: View {
                         Label("Grant calendar access", systemImage: "calendar")
                             .font(.bodyLarge)
                             .foregroundStyle(MeridianColors.primary)
-                            .frame(maxWidth: .infinity)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                             .padding(.vertical, 11)
                             .background {
-                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                                     .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
                             }
                     }
@@ -594,6 +673,7 @@ struct CalendarEventsCard: View {
                         Image(systemName: "calendar")
                             .font(.system(size: 16))
                             .foregroundStyle(MeridianColors.onSurface.opacity(0.35))
+                            .accessibilityHidden(true)
                         Text("No events scheduled for the next 7 days.")
                             .font(.bodyMedium)
                             .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
@@ -602,7 +682,7 @@ struct CalendarEventsCard: View {
                     ForEach(Array(displayEvents.enumerated()), id: \.element.id) { index, event in
                         eventRow(event)
                         if index < displayEvents.count - 1 {
-                            Divider().background(Color.white.opacity(0.08))
+                            Divider().background(plannerCardDividerColor)
                         }
                     }
                     if events.count > 5 {
@@ -616,15 +696,16 @@ struct CalendarEventsCard: View {
     }
 
     private func eventRow(_ event: CalendarEventModel) -> some View {
-        // The model carries no IANA zone, so device-local rendering matches the Android intent
-        // for events without an explicit zone.
+        // Render in the event's OWN zone (Android reads EVENT_TIMEZONE) so a Tokyo
+        // meeting shows its Tokyo wall-clock time; floating events fall back to local.
+        let eventZone = event.timeZoneId.flatMap(TimeZone.init(identifier:)) ?? .current
         let timeLabel: String = {
             if event.isAllDay { return "All day" }
-            let start = TimeFormats.hourMinute(date: event.startDate, timeZone: .current, use24Hour: use24Hour)
-            let end = TimeFormats.hourMinute(date: event.endDate, timeZone: .current, use24Hour: use24Hour)
+            let start = TimeFormats.hourMinute(date: event.startDate, timeZone: eventZone, use24Hour: use24Hour)
+            let end = TimeFormats.hourMinute(date: event.endDate, timeZone: eventZone, use24Hour: use24Hour)
             return "\(start) – \(end)"
         }()
-        let dateLabel = TimeFormats.shortDate(date: event.startDate, timeZoneId: TimeZone.current.identifier)
+        let dateLabel = TimeFormats.shortDate(date: event.startDate, timeZoneId: eventZone.identifier)
 
         return HStack {
             VStack(alignment: .leading, spacing: 2) {
@@ -643,5 +724,7 @@ struct CalendarEventsCard: View {
                 .foregroundStyle(MeridianColors.primary.opacity(0.7))
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(event.title), \(dateLabel), \(timeLabel)")
     }
 }

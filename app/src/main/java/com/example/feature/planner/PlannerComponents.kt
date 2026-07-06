@@ -14,6 +14,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +93,8 @@ internal fun CardTitle(icon: ImageVector, title: String) {
 internal fun SlotsEmptyState(
     modifier: Modifier = Modifier,
     hint: String = "No overlap found for this day. Try a different date with the arrows in Window, shorten the meeting duration, or deselect participants who are hard to reach.",
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
     Card(shape = GlassDefaults.cardShape, colors = transparentCardColors(), modifier = modifier) {
         Column(
@@ -102,20 +108,40 @@ internal fun SlotsEmptyState(
                 modifier = Modifier.size(40.dp),
             )
             Spacer(Modifier.height(12.dp))
-            Text(
-                text = "No workable slots on this day",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = hint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center,
-            )
+            // Headline + hint read as a single TalkBack node so the empty state
+            // announces as one description rather than two disconnected phrases.
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "No workable slots on this day",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            if (actionLabel != null && onAction != null) {
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = onAction,
+                    shape = MaterialTheme.shapes.medium,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text(actionLabel, style = MaterialTheme.typography.labelLarge)
+                }
+            }
         }
     }
 }
@@ -144,10 +170,17 @@ internal fun PlannedTaskRow(modifier: Modifier = Modifier,
     }
     Card(shape = GlassDefaults.cardShape, colors = transparentCardColors(), modifier = modifier.fillMaxWidth()) {
         Row(
-            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp, end = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            // Title + time/zone announce as one TalkBack item, spoken before the
+            // three action buttons that follow.
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp)
+                    .semantics(mergeDescendants = true) {},
+            ) {
                 Text(
                     task.title,
                     style = MaterialTheme.typography.titleMedium,

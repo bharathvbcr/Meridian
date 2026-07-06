@@ -25,31 +25,37 @@ struct HomeCityPickerSheet: View {
     var subtitle: String = "Search any city, airport, or time zone. Resolved on-device."
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var query: String = ""
     @State private var results: [SavedZone] = []
+    /// True while the debounce sleep + async `search()` are in flight for a
+    /// non-empty query. Gates the empty state so a valid search doesn't briefly
+    /// flash "No locations found" before the first result set returns.
+    @State private var isSearching: Bool = false
     @FocusState private var searchFocused: Bool
 
     var body: some View {
         GlassBottomSheet {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(title)
-                    .font(.system(size: 22, weight: .bold))   // titleLarge + Bold
-                    .foregroundStyle(MeridianColors.onSurface)
-                    .padding(.bottom, 4)
+            VStack(alignment: .leading, spacing: MeridianSpacing.md.rawValue) {
+                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
+                    Text(title)
+                        .font(.titleLarge)
+                        .foregroundStyle(MeridianColors.onSurface)
 
-                Text(subtitle)
-                    .font(.system(size: 12))                   // bodySmall
-                    .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
-                    .padding(.bottom, 12)
+                    Text(subtitle)
+                        .font(.bodyMedium)
+                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
 
                 searchField
-                    .padding(.bottom, 12)
 
                 resultsSection
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.horizontal, MeridianSpacing.lg.rawValue)
+            .padding(.bottom, MeridianSpacing.lg.rawValue)
         }
         // 120 ms debounce: any change to the query restarts this task; the sleep is
         // cancelled before issuing a new search, matching Android's produceState.
@@ -57,13 +63,18 @@ struct HomeCityPickerSheet: View {
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
                 results = []
+                isSearching = false
                 return
             }
+            isSearching = true
             try? await Task.sleep(for: .milliseconds(120))
             if Task.isCancelled { return }
             let found = await search(query)
             if Task.isCancelled { return }
-            results = found
+            withAnimation(reduceMotion ? nil : Motion.smooth()) {
+                results = found
+                isSearching = false
+            }
         }
         .task {
             // Autofocus shortly after present so the field is attached (Android delays 180 ms).
@@ -75,9 +86,10 @@ struct HomeCityPickerSheet: View {
     // MARK: Search field
 
     private var searchField: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(MeridianColors.onSurfaceVariant)
+                .accessibilityHidden(true)
 
             TextField(
                 "",
@@ -86,10 +98,13 @@ struct HomeCityPickerSheet: View {
                     .foregroundColor(MeridianColors.onSurfaceVariant)
             )
             .focused($searchFocused)
+            .font(.bodyLarge)
             .foregroundStyle(MeridianColors.onSurface)
             .textInputAutocapitalization(.words)
             .autocorrectionDisabled()
             .submitLabel(.search)
+            .accessibilityLabel("Search cities")
+            .accessibilityHint("Search any city, airport, or time zone")
 
             if !query.isEmpty {
                 Button {
@@ -97,22 +112,37 @@ struct HomeCityPickerSheet: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
                 .sensoryFeedback(.impact(weight: .light), trigger: query)
+                .transition(.opacity)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.leading, MeridianSpacing.md.rawValue)
+        // Trailing padding is tighter so the 44pt clear button keeps its edge rhythm.
+        .padding(.trailing, query.isEmpty ? MeridianSpacing.md.rawValue : MeridianSpacing.xs.rawValue)
+        .padding(.vertical, query.isEmpty ? MeridianSpacing.md.rawValue : MeridianSpacing.xs.rawValue)
+        .frame(minHeight: 44)
         .background {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    searchFocused ? MeridianColors.primary
-                                  : MeridianColors.onSurfaceVariant.opacity(0.5),
-                    lineWidth: 1
-                )
+            // Subtle fill so the field reads as a tappable input on the frosted
+            // sheet — mirrors how MeridianChip fills its capsule — with the
+            // focused-state primary stroke as the focus cue.
+            RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
+                .fill(MeridianColors.surface.opacity(0.55))
+                .overlay {
+                    RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
+                        .strokeBorder(
+                            searchFocused ? MeridianColors.primary
+                                          : MeridianColors.onSurfaceVariant.opacity(0.5),
+                            lineWidth: searchFocused ? 1.5 : 1
+                        )
+                }
         }
+        .animation(reduceMotion ? nil : Motion.snappy(), value: searchFocused)
+        .animation(reduceMotion ? nil : Motion.quick(), value: query.isEmpty)
     }
 
     // MARK: Results
@@ -120,31 +150,53 @@ struct HomeCityPickerSheet: View {
     @ViewBuilder
     private var resultsSection: some View {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty && results.isEmpty {
-            HStack {
-                Spacer()
-                Text("No locations found")
-                    .font(.system(size: 14))
-                    .foregroundStyle(MeridianColors.onSurfaceVariant)
-                Spacer()
-            }
-            .padding(.vertical, 24)
-        } else if !results.isEmpty {
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
-                        resultRow(result)
-                        if index < results.count - 1 {
-                            Rectangle()
-                                .fill(MeridianColors.onSurface.opacity(0.08))
-                                .frame(height: 1)
-                                .padding(.horizontal, 8)
+        Group {
+            if !results.isEmpty {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(results.enumerated()), id: \.element.id) { index, result in
+                            resultRow(result)
+                            if index < results.count - 1 {
+                                Rectangle()
+                                    .fill(MeridianColors.onSurface.opacity(0.08))
+                                    .frame(height: 1)
+                                    .padding(.horizontal, MeridianSpacing.sm.rawValue)
+                                    .accessibilityHidden(true)
+                            }
                         }
                     }
                 }
+                .frame(maxHeight: 360)
+            } else if isSearching {
+                // In-flight: debounce sleep or async search running. Show progress
+                // instead of a premature empty state so a valid search never flashes
+                // "No locations found".
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
+                    Spacer(minLength: 0)
+                    ProgressView()
+                        .tint(MeridianColors.primary)
+                    Text("Searching…")
+                        .font(.bodyMedium)
+                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, MeridianSpacing.xxl.rawValue)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Searching cities")
+            } else if !trimmed.isEmpty {
+                // Query present, search finished, nothing found.
+                HStack {
+                    Spacer(minLength: 0)
+                    Text("No locations found")
+                        .font(.bodyMedium)
+                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, MeridianSpacing.xxl.rawValue)
             }
-            .frame(maxHeight: 360)
         }
+        .animation(reduceMotion ? nil : Motion.smooth(), value: results.isEmpty)
+        .animation(reduceMotion ? nil : Motion.smooth(), value: isSearching)
     }
 
     private func resultRow(_ result: SavedZone) -> some View {
@@ -152,30 +204,35 @@ struct HomeCityPickerSheet: View {
             searchFocused = false
             onCitySelected(result)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: MeridianSpacing.md.rawValue) {
                 Image(systemName: "house")
-                    .font(.system(size: 18))
+                    .font(.titleMedium)
                     .foregroundStyle(MeridianColors.primary)
-                    .frame(width: 18)
+                    .frame(width: 20)
+                    .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue / 2) {
                     Text(result.displayName)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.titleMedium)
                         .foregroundStyle(MeridianColors.onSurface)
                     Text(result.id)
-                        .font(.system(size: 12))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
                 }
 
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
-            .padding(.horizontal, 8)
-            .padding(.vertical, 12)
+            .padding(.horizontal, MeridianSpacing.sm.rawValue)
+            .padding(.vertical, MeridianSpacing.md.rawValue)
+            .frame(minHeight: 44)
         }
         .buttonStyle(.plain)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous))
         .sensoryFeedback(.impact(weight: .light), trigger: result.id)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(result.displayName)
+        .accessibilityHint("Sets your home city")
         .accessibilityAddTraits(.isButton)
     }
 }

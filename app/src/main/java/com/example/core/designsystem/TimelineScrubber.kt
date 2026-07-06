@@ -2,6 +2,7 @@ package com.example.core.designsystem
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -55,13 +56,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -119,9 +127,32 @@ private fun offsetLabel(totalMinutes: Int): String {
     }
 }
 
+// Spoken accessibility phrasing for the dial's current offset, e.g. "Live time",
+// "3 hours 15 minutes later", "2 hours earlier" — TalkBack reads this instead of the
+// terse "+3h 15m" pill glyph so the direction and units are unambiguous.
+private fun offsetSpokenLabel(totalMinutes: Int): String {
+    if (totalMinutes == 0) return "Live time"
+    val abs = kotlin.math.abs(totalMinutes)
+    val hours = abs / 60
+    val minutes = abs % 60
+    val parts = buildList {
+        if (hours > 0) add(if (hours == 1) "1 hour" else "$hours hours")
+        if (minutes > 0) add(if (minutes == 1) "1 minute" else "$minutes minutes")
+    }
+    val direction = if (totalMinutes > 0) "later" else "earlier"
+    return "${parts.joinToString(" ")} $direction"
+}
+
 // Direction-aware crossfade for the readouts: the new value slides in from below when scrubbing
-// later, from above when scrubbing earlier, so the motion mirrors the dial's direction.
-private fun directionalSlide(target: Int, initial: Int): ContentTransform {
+// later, from above when scrubbing earlier, so the motion mirrors the dial's direction. Under
+// reduce-motion it collapses to a plain fade so nothing slides (north-star: respect Reduce Motion).
+private fun directionalSlide(target: Int, initial: Int, reduceMotion: Boolean): ContentTransform {
+    if (reduceMotion) {
+        return ContentTransform(
+            targetContentEnter = fadeIn(tween(120)),
+            initialContentExit = fadeOut(tween(90)),
+        )
+    }
     val dir = if (target > initial) 1 else -1
     return ContentTransform(
         targetContentEnter = slideInVertically(tween(220)) { h -> dir * h } + fadeIn(tween(180)),
@@ -139,6 +170,9 @@ fun TimelineScrubber(
 ) {
     val haptic = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+    // Honor the OS "remove animations" preference: decorative slides/scales collapse to instant,
+    // while the essential drag-release snap physics stay (they are feedback, not decoration).
+    val reduceMotion = LocalReduceMotion.current
 
     // Dial offset in *minutes* (−720..720) held in an Animatable so resets, tap-to-jump, and
     // drag-release all *glide* to their target instead of snapping. Bounds let a fast drag pin
@@ -158,16 +192,19 @@ fun TimelineScrubber(
 
     val primaryColor = MaterialTheme.colorScheme.primary
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface
+    // Muted caption tint for the eyebrow title + drag hint, so the live readout stays the focus.
+    val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant
     // Material You elevated-card tone backing the blur — lifted lighter than the page so the
     // card and its text never wash out into the dark background (see GlassDefaults.scrubberCardTone).
     val cardSurfaceColor = GlassDefaults.scrubberCardTone
     val glassOpacity = LocalGlassOpacity.current
     val scrubberGlass = remember(glassOpacity) { ScrubberGlass.alphas(glassOpacity) }
-    val labelStyle = remember(onSurfaceColor) {
-        TextStyle(
+    // Tick captions follow the documented type scale (labelSmall) so they honor Dynamic Type
+    // instead of a hand-set sp literal; only the tint + centering are overridden for the Canvas.
+    val labelBaseStyle = MaterialTheme.typography.labelSmall
+    val labelStyle = remember(onSurfaceColor, labelBaseStyle) {
+        labelBaseStyle.copy(
             color = onSurfaceColor.copy(alpha = 0.85f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center
         )
     }
@@ -199,6 +236,13 @@ fun TimelineScrubber(
     val caretSizePx   = remember(density) { with(density) { 6.dp.toPx()  } }
     // Reuse a single Path instance; reset and repopulate each frame instead of allocating.
     val caretPath     = remember { androidx.compose.ui.graphics.Path() }
+    // Fixed-alpha tints hoisted out of the dial draw loop — Color.copy in the per-tick loop
+    // would otherwise allocate for every tick on every frame of a 60-120 fps drag.
+    val bandTint          = remember(primaryColor)   { primaryColor.copy(alpha = 0.18f) }
+    val centerGlowTint    = remember(primaryColor)   { primaryColor.copy(alpha = 0.35f) }
+    val hourTickColor     = remember(onSurfaceColor) { onSurfaceColor.copy(alpha = 0.95f) }
+    val halfHourTickColor = remember(onSurfaceColor) { onSurfaceColor.copy(alpha = 0.65f) }
+    val quarterTickColor  = remember(onSurfaceColor) { onSurfaceColor.copy(alpha = 0.4f) }
 
     val totalSteps = 48 // −48..+48 quarter-hour steps span the ±12h range
 
@@ -275,10 +319,11 @@ fun TimelineScrubber(
         }
     }
 
-    // Press-scale for the collapsed pill so it feels physical when held.
+    // Press-scale for the collapsed pill so it feels physical when held. Purely decorative, so
+    // reduce-motion pins it to 1f (no scale) rather than animating.
     val pillScale by animateFloatAsState(
-        targetValue = if (dialPressed) 0.94f else 1f,
-        animationSpec = Motion.bouncy(),
+        targetValue = if (dialPressed && !reduceMotion) 0.94f else 1f,
+        animationSpec = if (reduceMotion) Motion.quick() else Motion.bouncy(),
         label = "pillScale"
     )
 
@@ -335,7 +380,15 @@ fun TimelineScrubber(
     AnimatedContent(
         targetState = expanded,
         modifier = Modifier.fillMaxWidth(),
-        transitionSpec = { Motion.scrubberExpandCollapseTransform(targetState) },
+        transitionSpec = {
+            // Reduce-motion: swap the springy expand/collapse morph for an instant crossfade so the
+            // dial appears/tucks without sliding or scaling (north-star: respect Reduce Motion).
+            if (reduceMotion) {
+                (fadeIn(tween(90)) togetherWith fadeOut(tween(90)))
+            } else {
+                Motion.scrubberExpandCollapseTransform(targetState)
+            }
+        },
         contentAlignment = Alignment.BottomCenter,
         label = "scrubber_expand"
     ) { isExpanded ->
@@ -382,7 +435,9 @@ fun TimelineScrubber(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Tune,
-                            contentDescription = "Open time dial",
+                            // Announce the current offset alongside the affordance so a TalkBack user
+                            // hears where the scrub sits before opening the dial.
+                            contentDescription = "Open time dial, currently ${offsetSpokenLabel(liveOffsetMin)}",
                             tint = primaryColor,
                             modifier = Modifier.size(18.dp)
                         )
@@ -390,7 +445,7 @@ fun TimelineScrubber(
                     Spacer(modifier = Modifier.width(10.dp))
                     AnimatedContent(
                         targetState = liveOffsetMin,
-                        transitionSpec = { directionalSlide(targetState, initialState) },
+                        transitionSpec = { directionalSlide(targetState, initialState, reduceMotion) },
                         contentAlignment = Alignment.CenterStart,
                         label = "pill_label"
                     ) { off ->
@@ -468,17 +523,23 @@ fun TimelineScrubber(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    // Eyebrow title over the live readout. The readout is the loudest element in the
+                    // group (titleMedium) so the scrubbed date/time reads first; the title is demoted
+                    // to a muted labelMedium caption. Merged so TalkBack speaks it as one summary.
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics(mergeDescendants = true) {}
+                    ) {
                         Text(
-                            text = "Interactive Virtual Time Dial",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = onSurfaceColor
+                            text = "Time Dial",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = onSurfaceVariantColor
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         AnimatedContent(
                             targetState = liveOffsetMin,
-                            transitionSpec = { directionalSlide(targetState, initialState) },
+                            transitionSpec = { directionalSlide(targetState, initialState, reduceMotion) },
                             contentAlignment = Alignment.CenterStart,
                             label = "scrub_readout"
                         ) { off ->
@@ -491,9 +552,9 @@ fun TimelineScrubber(
                             }
                             Text(
                                 text = text,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = onSurfaceColor.copy(alpha = 0.9f),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = onSurfaceColor,
                                 maxLines = 1
                             )
                         }
@@ -533,6 +594,46 @@ fun TimelineScrubber(
                             color = onSurfaceColor.copy(alpha = scrubberGlass.trackBackground),
                             shape = RoundedCornerShape(12.dp)
                         )
+                        // The dial is a drag-only control; expose it to TalkBack as an adjustable
+                        // seekbar so a screen-reader user can read the current offset and nudge it
+                        // via swipe-up/down (setProgress) or the explicit earlier/later/reset actions
+                        // — none of which are possible with the raw pointer gesture alone.
+                        .semantics {
+                            // No explicit Role: the progressBarRangeInfo + setProgress below make
+                            // TalkBack treat this as an adjustable seek control (swipe up/down),
+                            // which a misleading Role (there is no Slider role) would override.
+                            contentDescription = "Time dial"
+                            stateDescription = offsetSpokenLabel(liveOffsetMin)
+                            progressBarRangeInfo = ProgressBarRangeInfo(
+                                current = liveOffsetMin.toFloat(),
+                                range = MIN_OFFSET_MIN..MAX_OFFSET_MIN,
+                                // Quarter-hour detents across the ±12h span (‑48..+48 = 96 gaps).
+                                steps = totalSteps * 2 - 1,
+                            )
+                            setProgress { targetMinutes ->
+                                val clamped = targetMinutes.coerceIn(MIN_OFFSET_MIN, MAX_OFFSET_MIN)
+                                interactionTick++
+                                goToStep((clamped / 15f).roundToInt())
+                                true
+                            }
+                            customActions = listOf(
+                                CustomAccessibilityAction(label = "Later by 15 minutes") {
+                                    interactionTick++
+                                    goToStep((liveOffsetMin / 15f).roundToInt() + 1)
+                                    true
+                                },
+                                CustomAccessibilityAction(label = "Earlier by 15 minutes") {
+                                    interactionTick++
+                                    goToStep((liveOffsetMin / 15f).roundToInt() - 1)
+                                    true
+                                },
+                                CustomAccessibilityAction(label = "Reset to live") {
+                                    interactionTick++
+                                    goToStep(0)
+                                    true
+                                },
+                            )
+                        }
                 ) {
                     Canvas(modifier = Modifier.fillMaxSize()) {
                         val widthValue = size.width
@@ -543,7 +644,7 @@ fun TimelineScrubber(
                         // "now" column so the selected time reads clearly against the ticks.
                         val bandHalf = tickSpacingPx * 0.9f
                         drawRect(
-                            color = primaryColor.copy(alpha = 0.18f),
+                            color = bandTint,
                             topLeft = Offset(centerX - bandHalf, 0f),
                             size = androidx.compose.ui.geometry.Size(bandHalf * 2f, heightValue),
                         )
@@ -569,9 +670,9 @@ fun TimelineScrubber(
 
                             // Brightened so even the minor 15-min ticks stay visible over glass.
                             val color = when {
-                                isHourTick -> onSurfaceColor.copy(alpha = 0.95f)
-                                isHalfHourTick -> onSurfaceColor.copy(alpha = 0.65f)
-                                else -> onSurfaceColor.copy(alpha = 0.4f)
+                                isHourTick -> hourTickColor
+                                isHalfHourTick -> halfHourTickColor
+                                else -> quarterTickColor
                             }
 
                             val strokeWidth = when {
@@ -606,7 +707,7 @@ fun TimelineScrubber(
                         // Center indicator: a soft glow underlay + a crisp primary line so the
                         // present-moment marker pops at any glass opacity.
                         drawLine(
-                            color = primaryColor.copy(alpha = 0.35f),
+                            color = centerGlowTint,
                             start = Offset(centerX, 0f),
                             end = Offset(centerX, heightValue),
                             strokeWidth = glowWidthPx,
@@ -629,21 +730,35 @@ fun TimelineScrubber(
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(10.dp))
-                
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Range endpoints + drag hint. Purely visual scaffolding for the dial, so it is
+                // cleared from TalkBack (the dial node above already announces its range and state).
                 Row(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clearAndSetSemantics { }
                 ) {
-                    Text("-12 hrs", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = onSurfaceColor.copy(alpha = 0.7f))
-                    Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        "Hold & drag to scrub · flick fast to jump hours",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = primaryColor
+                        "-12 hrs",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = onSurfaceVariantColor
                     )
                     Spacer(modifier = Modifier.weight(1f))
-                    Text("+12 hrs", fontSize = 11.sp, fontWeight = FontWeight.Medium, color = onSurfaceColor.copy(alpha = 0.7f))
+                    // Demoted from primary+Bold to a muted caption so it supports — not competes with —
+                    // the live readout above.
+                    Text(
+                        "Hold & drag to scrub · flick to jump",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onSurfaceVariantColor,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        "+12 hrs",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = onSurfaceVariantColor
+                    )
                 }
             }
         }

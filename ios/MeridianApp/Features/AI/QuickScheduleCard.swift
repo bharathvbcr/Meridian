@@ -32,6 +32,8 @@ struct QuickScheduleCard: View {
 
     private let localZoneId = TimeZone.current.identifier
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var expanded = true
     @State private var title = ""
     @State private var selectedDate = Date()        // wall-clock components are read in selectedZoneId
@@ -85,6 +87,12 @@ struct QuickScheduleCard: View {
         return "\(date) · \(time) your time"
     }
 
+    /// True when the chosen hour reads as daytime (drives the solar accent + glyph).
+    private var isDaytimeHour: Bool {
+        let hour = Calendar.current.component(.hour, from: selectedDate)
+        return (5...20).contains(hour)
+    }
+
     /// Time-of-day glyph for the chosen hour (solar theme parity).
     private var todIcon: String {
         let hour = Calendar.current.component(.hour, from: selectedDate)
@@ -96,6 +104,11 @@ struct QuickScheduleCard: View {
         }
     }
 
+    /// Sun/moon accent matching the chosen hour — reads identically to Now & World Clock.
+    private var todAccent: Color {
+        isDaytimeHour ? MeridianColors.daylightAccent : MeridianColors.nightAccent
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -103,13 +116,17 @@ struct QuickScheduleCard: View {
             header
             if expanded {
                 expandedContent
-                    .padding(.top, 12)
+                    .padding(.top, MeridianSpacing.md.rawValue)
+                    .transition(reduceMotion
+                        ? .opacity
+                        : .opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(16)
+        .padding(MeridianSpacing.lg.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .liquidGlass(cornerRadius: 20, tint: MeridianColors.primary)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue, tint: MeridianColors.primary)
         .sensoryFeedback(.impact(weight: .light), trigger: feedbackTrigger)
+        .sensoryFeedback(.success, trigger: addedFlash) { _, new in new }
         .sheet(isPresented: $showZonePicker) {
             ZonePickerSheet(
                 localZoneId: localZoneId,
@@ -133,14 +150,19 @@ struct QuickScheduleCard: View {
 
     private var header: some View {
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            if reduceMotion {
                 expanded.toggle()
+            } else {
+                withAnimation(Motion.snappy()) {
+                    expanded.toggle()
+                }
             }
         } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: MeridianSpacing.sm.rawValue) {
                 Image(systemName: "clock")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(MeridianColors.primary)
+                    .accessibilityHidden(true)
                 Text("Quick schedule")
                     .font(.titleMedium)
                     .foregroundStyle(MeridianColors.onSurface)
@@ -149,43 +171,53 @@ struct QuickScheduleCard: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurfaceVariant)
                     .rotationEffect(.degrees(expanded ? 180 : 0))
+                    .accessibilityHidden(true)
             }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableScaleStyle())
+        .accessibilityLabel("Quick schedule")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(expanded ? "Double tap to collapse" : "Double tap to expand")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Expanded content
 
     private var expandedContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.md.rawValue) {
             // Title field.
             TextField("Event title", text: $title)
                 .font(.bodyLarge)
                 .foregroundStyle(MeridianColors.onSurface)
                 .tint(MeridianColors.primary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.horizontal, MeridianSpacing.md.rawValue)
+                .padding(.vertical, MeridianSpacing.md.rawValue)
+                .frame(minHeight: 44)
                 .background {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                         .fill(MeridianColors.onSurface.opacity(0.05))
                         .overlay {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                                 .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
                         }
                 }
+                .accessibilityLabel("Event title")
 
             // Relative presets.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
                     presetChip("In 1 hr") { applyPreset(addingHours: 1, minute: 0) }
                     presetChip("Tonight 8 PM") { applyPreset(hour: 20, minute: 0) }
                     presetChip("Tomorrow 9 AM") { applyPreset(addingDays: 1, hour: 9, minute: 0) }
                     presetChip("Next week") { applyPreset(addingDays: 7, hour: 9, minute: 0) }
                 }
             }
+            .accessibilityLabel("Quick time presets")
 
             // Date + time selectors (native pickers in a compact graphical style).
-            HStack(spacing: 12) {
+            HStack(spacing: MeridianSpacing.md.rawValue) {
                 DatePicker(
                     "",
                     selection: $selectedDate,
@@ -194,6 +226,7 @@ struct QuickScheduleCard: View {
                 .labelsHidden()
                 .datePickerStyle(.compact)
                 .tint(MeridianColors.primary)
+                .accessibilityLabel("Event date")
 
                 DatePicker(
                     "",
@@ -203,38 +236,48 @@ struct QuickScheduleCard: View {
                 .labelsHidden()
                 .datePickerStyle(.compact)
                 .tint(MeridianColors.primary)
+                .accessibilityLabel("Event time")
 
                 Spacer(minLength: 0)
             }
 
             // Zone selector.
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue) {
                 Text("Time zone")
                     .font(.labelMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
+                    .accessibilityHidden(true)
                 Button {
                     showZonePicker = true
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: MeridianSpacing.sm.rawValue) {
                         Image(systemName: "globe")
                             .font(.system(size: 16, weight: .medium))
+                            .accessibilityHidden(true)
                         Text(selectedZoneLabel)
                             .lineLimit(1)
                         Spacer()
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(MeridianColors.onSurfaceVariant)
+                            .accessibilityHidden(true)
                     }
                     .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurface)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 11)
+                    .padding(.horizontal, MeridianSpacing.md.rawValue)
+                    .padding(.vertical, MeridianSpacing.md.rawValue)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                     .background {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableScaleStyle())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Time zone, \(selectedZoneLabel)")
+                .accessibilityHint("Double tap to change time zone")
+                .accessibilityAddTraits(.isButton)
             }
 
             preview
@@ -243,10 +286,12 @@ struct QuickScheduleCard: View {
             Button {
                 addTask()
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
                     if addedFlash {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(MeridianColors.positive)
+                            .transition(.scale.combined(with: .opacity))
                         Text("Added to your plan")
                     } else {
                         Text("Add to plan")
@@ -254,16 +299,32 @@ struct QuickScheduleCard: View {
                 }
                 .font(.titleMedium)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
+                .padding(.vertical, MeridianSpacing.md.rawValue)
+                .frame(minHeight: 44)
+                .contentShape(Capsule())
                 .background {
                     Capsule().fill(canAdd ? MeridianColors.primary : MeridianColors.onSurfaceVariant.opacity(0.3))
                 }
                 .foregroundStyle(MeridianColors.onPrimary)
+                .animation(reduceMotion ? nil : Motion.bouncy(), value: addedFlash)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableScaleStyle())
             .disabled(!canAdd)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: canAdd)
+            .animation(reduceMotion ? nil : Motion.snappy(), value: canAdd)
+            .accessibilityLabel(addedFlash ? "Added to your plan" : "Add to plan")
+            .accessibilityHint(addButtonHint)
         }
+    }
+
+    /// Explains why the Add button is unavailable so VoiceOver users understand the disabled state.
+    private var addButtonHint: String {
+        if title.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "Enter an event title to add it to your plan"
+        }
+        if isPast {
+            return "The chosen time has already passed. Pick a later time to add it."
+        }
+        return "Adds this event to your plan"
     }
 
     private var canAdd: Bool {
@@ -273,44 +334,76 @@ struct QuickScheduleCard: View {
     // MARK: Live preview
 
     private var preview: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
             Text(title.trimmingCharacters(in: .whitespaces).isEmpty ? "Untitled event" : title)
                 .font(.titleMedium)
                 .foregroundStyle(MeridianColors.onSurface)
 
-            HStack(spacing: 4) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
                 Image(systemName: todIcon)
                     .font(.system(size: 12))
-                    .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+                    .foregroundStyle(todAccent)
+                    .accessibilityHidden(true)
                 Text("\(dateLabel) · \(timeLabel) · \(selectedZoneLabel) — \(relative)")
                     .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.65))
             }
 
             if let localEquivalent {
-                Text("= \(localEquivalent)")
-                    .font(.bodyMedium)
-                    .foregroundStyle(MeridianColors.primary)
-                    .padding(.top, 2)
+                HStack(spacing: MeridianSpacing.xs.rawValue) {
+                    Text("Your time:")
+                        .font(.labelMedium)
+                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    Text(localEquivalentValue ?? localEquivalent)
+                        .font(.bodyMedium.weight(.semibold))
+                        .foregroundStyle(MeridianColors.primary)
+                }
+                .padding(.top, MeridianSpacing.xs.rawValue)
+                .accessibilityElement(children: .combine)
             }
 
             if isPast {
-                HStack(spacing: 4) {
+                HStack(spacing: MeridianSpacing.xs.rawValue) {
                     Image(systemName: "exclamationmark.circle")
                         .font(.system(size: 12))
+                        .accessibilityHidden(true)
                     Text("That time has already passed — pick a later time.")
                 }
                 .font(.labelMedium)
-                .foregroundStyle(.red)
-                .padding(.top, 4)
+                .foregroundStyle(MeridianColors.error)
+                .padding(.top, MeridianSpacing.xs.rawValue)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("That time has already passed. Pick a later time.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(MeridianSpacing.md.rawValue)
         .background {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(MeridianColors.surface.opacity(0.25))
+            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                .fill(MeridianColors.surface.opacity(0.5))
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Preview")
+        .accessibilityValue(previewAccessibilityValue)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// The bare local-equivalent value ("date · time"), with the trailing " your time" stripped
+    /// since the visible "Your time:" prefix now carries that meaning.
+    private var localEquivalentValue: String? {
+        guard let localEquivalent else { return nil }
+        let suffix = " your time"
+        guard localEquivalent.hasSuffix(suffix) else { return localEquivalent }
+        return String(localEquivalent.dropLast(suffix.count))
+    }
+
+    /// A single spoken summary of the live preview for VoiceOver.
+    private var previewAccessibilityValue: String {
+        let name = title.trimmingCharacters(in: .whitespaces).isEmpty ? "Untitled event" : title
+        var parts = ["\(name), \(dateLabel) at \(timeLabel) \(selectedZoneLabel), \(relative)"]
+        if let localEquivalent { parts.append("Your time: \(localEquivalent)") }
+        if isPast { parts.append("That time has already passed. Pick a later time.") }
+        return parts.joined(separator: ". ")
     }
 
     // MARK: Chips
@@ -320,23 +413,27 @@ struct QuickScheduleCard: View {
             feedbackTrigger &+= 1
             action()
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(MeridianColors.primary)
+                    .accessibilityHidden(true)
                 Text(label)
             }
             .font(.labelMedium)
             .foregroundStyle(MeridianColors.onSurface)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
+            .padding(.horizontal, MeridianSpacing.md.rawValue)
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
             .background {
                 Capsule()
                     .fill(MeridianColors.surface.opacity(0.6))
                     .overlay { Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableScaleStyle())
+        .accessibilityLabel(label)
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Actions
@@ -394,6 +491,22 @@ struct QuickScheduleCard: View {
             core = "\(days) day\(days > 1 ? "s" : "")"
         }
         return past ? "\(core) ago" : "in \(core)"
+    }
+}
+
+// MARK: - PressableScaleStyle
+
+/// Shared pressed-scale feedback for the card's hand-rolled controls, matching the
+/// Liquid-Glass system's press treatment (subtle depress on `Motion.quick()`).
+/// Respects Reduce Motion by skipping the transform.
+private struct PressableScaleStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(reduceMotion ? 1.0 : (configuration.isPressed ? 0.96 : 1.0))
+            .opacity(configuration.isPressed ? 0.85 : 1.0)
+            .animation(Motion.quick(), value: configuration.isPressed)
     }
 }
 

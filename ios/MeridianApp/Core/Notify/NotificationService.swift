@@ -42,7 +42,9 @@ final class NotificationService {
     }
 
     /// Deep link target tapping a reminder routes to (matches Android `meridian://plan`).
-    static let reminderDeepLink = URL(string: "meridian://plan")!
+    /// An immutable, `Sendable` URL constant, so it is `nonisolated` and reachable from the
+    /// `nonisolated` notification-delegate callbacks.
+    nonisolated static let reminderDeepLink = URL(string: "meridian://plan")!
 
     // MARK: Private state
 

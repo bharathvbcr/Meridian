@@ -31,6 +31,8 @@ struct DraftConfirmCard: View {
     @State private var shareURL: ShareItem? = nil
     @State private var feedbackTrigger: Int = 0
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // MARK: Derived display
 
     private var whenText: String {
@@ -44,38 +46,79 @@ struct DraftConfirmCard: View {
         } ?? draft.tzId
     }
 
+    /// Day/night solar glyph for the when-line, resolved in the draft's own zone
+    /// (parity with the `todIcon` derivation in `QuickScheduleCard`).
+    private var isDaytime: Bool {
+        var calendar = Calendar(identifier: .gregorian)
+        if let zone = TimeZone(identifier: draft.tzId) {
+            calendar.timeZone = zone
+        }
+        let hour = calendar.component(.hour, from: draft.timestamp)
+        return hour >= 6 && hour < 18
+    }
+
+    private var todIcon: String { isDaytime ? "sun.max.fill" : "moon.stars.fill" }
+    private var todAccent: Color { isDaytime ? MeridianColors.daylightAccent : MeridianColors.nightAccent }
+
+    /// VoiceOver-friendly single-string description of the proposed event.
+    private var scheduleAccessibilityLabel: String {
+        "Proposed event: \(draft.title). \(whenText), \(shortZone)."
+    }
+
     // MARK: Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Proposed event")
-                .font(.labelMedium)
-                .foregroundStyle(MeridianColors.primary.opacity(0.7))
+        VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue) {
+            VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
+                Text("Proposed event")
+                    .font(.labelMedium)
+                    .textCase(.uppercase)
+                    .foregroundStyle(MeridianColors.primary.opacity(0.8))
 
-            Text(draft.title)
-                .font(.titleMedium)
-                .foregroundStyle(MeridianColors.onSurface)
+                Text(draft.title)
+                    .font(.titleMedium)
+                    .foregroundStyle(MeridianColors.onSurface)
 
-            Text("\(whenText) · \(shortZone)")
-                .font(.bodyMedium)
-                .foregroundStyle(MeridianColors.onSurface.opacity(0.8))
+                // When-line reads first after the title: full-contrast text led by the
+                // day/night solar glyph, with the zone as a lighter trailing detail.
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
+                    Image(systemName: todIcon)
+                        .font(.bodyMedium)
+                        .foregroundStyle(todAccent)
+                        .accessibilityHidden(true)
 
-            // Primary row: confirm + calendar export.
-            HStack(spacing: 12) {
+                    Text(whenText)
+                        .font(.bodyLarge)
+                        .foregroundStyle(MeridianColors.onSurface)
+                        + Text("  ·  \(shortZone)")
+                        .font(.bodyMedium)
+                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                }
+                .padding(.top, MeridianSpacing.xs.rawValue)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(scheduleAccessibilityLabel)
+            .accessibilityAddTraits(.isHeader)
+
+            // Primary row: confirm + calendar export. The filled Add capsule is the
+            // dominant, constructive default action.
+            HStack(spacing: MeridianSpacing.md.rawValue) {
                 Button {
                     feedbackTrigger &+= 1
                     onConfirm()
                 } label: {
                     Text("Add to plan")
                         .font(.titleMedium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, minHeight: minTouchTarget)
                         .background {
                             Capsule().fill(MeridianColors.primary)
                         }
                         .foregroundStyle(MeridianColors.onPrimary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCapsuleStyle())
+                .accessibilityLabel("Add to plan")
+                .accessibilityHint("Adds this event to your plan")
+                .accessibilityAddTraits(.isButton)
 
                 Button {
                     feedbackTrigger &+= 1
@@ -83,65 +126,86 @@ struct DraftConfirmCard: View {
                 } label: {
                     Label("Calendar", systemImage: "calendar")
                         .font(.titleMedium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, minHeight: minTouchTarget)
                         .background {
                             Capsule().fill(MeridianColors.primary.opacity(0.18))
                         }
                         .foregroundStyle(MeridianColors.primary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCapsuleStyle())
+                .accessibilityLabel("Calendar")
+                .accessibilityHint("Adds this event to your system calendar")
+                .accessibilityAddTraits(.isButton)
             }
-            .padding(.top, 4)
+            .padding(.top, MeridianSpacing.xs.rawValue)
 
-            // Secondary row: share .ics + discard.
-            HStack(spacing: 12) {
+            // Secondary row: share .ics (constructive) + discard (destructive).
+            HStack(spacing: MeridianSpacing.md.rawValue) {
                 Button {
                     feedbackTrigger &+= 1
                     exportICS()
                 } label: {
                     Label("Share .ics", systemImage: "square.and.arrow.up")
                         .font(.bodyMedium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .frame(maxWidth: .infinity, minHeight: minTouchTarget)
                         .background {
                             Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
                         }
                         .foregroundStyle(MeridianColors.onSurface)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCapsuleStyle())
+                .accessibilityLabel("Share .ics")
+                .accessibilityHint("Exports an .ics file to share")
+                .accessibilityAddTraits(.isButton)
 
+                // Discard carries a distinct error-tinted treatment so the destructive
+                // dismiss action is unmistakable versus the constructive Share button.
                 Button(role: .destructive) {
                     feedbackTrigger &+= 1
                     onDiscard()
                 } label: {
                     Text("Discard")
                         .font(.bodyMedium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 9)
+                        .frame(maxWidth: .infinity, minHeight: minTouchTarget)
                         .background {
-                            Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
+                            Capsule().strokeBorder(MeridianColors.error.opacity(0.5), lineWidth: 1)
                         }
-                        .foregroundStyle(MeridianColors.onSurfaceVariant)
+                        .foregroundStyle(MeridianColors.error)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableCapsuleStyle())
+                .accessibilityLabel("Discard")
+                .accessibilityHint("Dismisses this proposed event without saving")
+                .accessibilityAddTraits(.isButton)
             }
 
             if let exportError {
                 Text(exportError)
                     .font(.labelMedium)
-                    .foregroundStyle(.red)
-                    .padding(.top, 2)
+                    .foregroundStyle(MeridianColors.error)
+                    .padding(.top, MeridianSpacing.xs.rawValue)
+                    .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                    .accessibilityAddTraits(.isStaticText)
+                    .accessibilityLabel("Error: \(exportError)")
             }
         }
-        .padding(16)
+        .padding(MeridianSpacing.lg.rawValue)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .liquidGlass(cornerRadius: 20, tint: MeridianColors.primary)
+        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue, tint: MeridianColors.primary)
         .sensoryFeedback(.impact(weight: .light), trigger: feedbackTrigger)
+        // Card animates in/out when the parent inserts/removes it; degrades to a
+        // plain fade under Reduce Motion.
+        .transition(
+            reduceMotion
+                ? .opacity
+                : .scale(scale: 0.94).combined(with: .opacity)
+        )
         .sheet(item: $shareURL) { item in
             ShareSheet(items: [item.url])
         }
     }
+
+    /// iOS minimum comfortable touch-target height (Apple HIG 44 pt).
+    private var minTouchTarget: CGFloat { 44 }
 
     // MARK: Export actions
 
@@ -159,9 +223,9 @@ struct DraftConfirmCard: View {
                 zoneId: zoneId
             )
             if case let .failure(reason) = result {
-                exportError = reason
+                withAnimation(reduceMotion ? nil : Motion.snappy()) { exportError = reason }
             } else {
-                exportError = nil
+                withAnimation(reduceMotion ? nil : Motion.snappy()) { exportError = nil }
             }
         }
     }
@@ -176,11 +240,30 @@ struct DraftConfirmCard: View {
                 durationMinutes: defaultEventDurationMinutes,
                 timeZoneId: draft.tzId
             )
-            exportError = nil
+            withAnimation(reduceMotion ? nil : Motion.snappy()) { exportError = nil }
             shareURL = ShareItem(url: url)
         } catch {
-            exportError = "Couldn't create the .ics file."
+            withAnimation(reduceMotion ? nil : Motion.snappy()) {
+                exportError = "Couldn't create the .ics file."
+            }
         }
+    }
+}
+
+// MARK: - PressableCapsuleStyle
+
+/// Shared pressed-scale feedback for the card's capsule actions — depresses to
+/// 0.96 on touch with a quick spring, mirroring the Liquid-Glass press idiom used
+/// by nav pills and other controls. Reduce Motion collapses the scale to identity.
+private struct PressableCapsuleStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Capsule())
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1.0)
+            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .animation(Motion.quick(), value: configuration.isPressed)
     }
 }
 

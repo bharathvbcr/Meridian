@@ -17,7 +17,7 @@ public enum OffsetZones {
     /// Anchored to the whole (already-trimmed, lower-cased) string.
     // VERIFY: Swift `Regex` literal — anchors `^…$` match start/end of the input; we additionally
     // require a full match via `wholeMatch`. The `(?::?(\d{2}))?` group makes the colon optional.
-    private static let pattern = /^(utc|gmt|z|zulu)?\s*([+-])?\s*(\d{1,2})?(?::?(\d{2}))?$/
+    nonisolated(unsafe) private static let pattern = /^(utc|gmt|z|zulu)?\s*([+-])?\s*(\d{1,2})?(?::?(\d{2}))?$/
 
     /// `java.time` caps offsets at ±18:00.
     private static let maxOffsetMinutes = 18 * 60

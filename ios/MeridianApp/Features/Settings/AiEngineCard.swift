@@ -12,10 +12,10 @@ import SwiftUI
 // MARK: - Local design tokens
 
 private extension Color {
-    static let settingsPrimary      = Color(hex: "#60CDFF")
-    static let settingsOnSurface    = Color(hex: "#F1F5F9")
-    static let settingsOnSurfaceVar = Color(hex: "#94A3B8")
-    static let settingsPositive     = Color(hex: "#4CAF50")
+    /// Caution accent for the Cloud privacy trade-off. Reuses the existing
+    /// night/warning glow token (`daylightGlow` #FFB703) so the signal reads
+    /// identically to the warning glow used elsewhere in the app.
+    static let settingsCaution = MeridianColors.daylightGlow
 }
 
 // MARK: - AiEngineCard
@@ -23,24 +23,30 @@ private extension Color {
 struct AiEngineCard: View {
     @Bindable var viewModel: MainViewModel
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var engine: AiEngine { viewModel.settings.aiEngine }
 
     var body: some View {
         SettingsCard {
-            HStack(spacing: 8) {
+            HStack(spacing: MeridianSpacing.sm.rawValue) {
                 Image(systemName: "cpu")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.settingsPrimary)
+                    .font(.titleMedium)
+                    .foregroundStyle(MeridianColors.primary)
+                    .accessibilityHidden(true)
                 Text("Assistant engine")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.settingsOnSurface)
+                    .font(.titleMedium)
+                    .foregroundStyle(MeridianColors.onSurface)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
 
             Text("The Assistant runs on-device with Apple Intelligence when supported — no key, and your prompts never leave the phone. Choose Cloud to always use a hosted model.")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Color.settingsOnSurfaceVar)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .font(.bodyMedium)
+                .foregroundStyle(MeridianColors.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, MeridianSpacing.sm.rawValue)
+                .padding(.bottom, MeridianSpacing.md.rawValue)
 
             Picker("Engine", selection: Binding(
                 get: { engine },
@@ -50,22 +56,42 @@ struct AiEngineCard: View {
                 Text("Cloud").tag(AiEngine.cloud)
             }
             .pickerStyle(.segmented)
+            .accessibilityHint("Choose where the Assistant runs")
 
             // Selected-engine summary line.
-            HStack(spacing: 6) {
+            HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
                 Image(systemName: engineIcon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(engine == .onDevice ? Color.settingsPositive : Color.settingsPrimary)
+                    .font(.bodyMedium.weight(.semibold))
+                    .foregroundStyle(summaryAccent)
+                    .contentTransition(.symbolEffect(.replace))
+                    .accessibilityHidden(true)
                 Text(engineSummary)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Color.settingsOnSurfaceVar)
+                    .font(.labelMedium)
+                    .foregroundStyle(summaryTextColor)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
             }
-            .padding(.top, 12)
+            .padding(.top, MeridianSpacing.md.rawValue)
+            .accessibilityElement(children: .combine)
         }
+        .animation(reduceMotion ? nil : Motion.snappy(), value: engine)
+        .sensoryFeedback(.selection, trigger: engine)
     }
 
     private var engineIcon: String {
         engine == .onDevice ? "checkmark.seal.fill" : "cloud.fill"
+    }
+
+    /// Accent for the summary icon — positive for the private on-device path,
+    /// caution for the cloud path (mirrors the text-color hierarchy).
+    private var summaryAccent: Color {
+        engine == .onDevice ? MeridianColors.positive : Color.settingsCaution
+    }
+
+    /// The Cloud message carries a privacy trade-off, so it reads in the caution
+    /// accent; the neutral On-Device state stays in secondary text.
+    private var summaryTextColor: Color {
+        engine == .onDevice ? MeridianColors.onSurfaceVariant : Color.settingsCaution
     }
 
     private var engineSummary: String {

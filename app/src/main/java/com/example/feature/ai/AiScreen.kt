@@ -15,6 +15,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -60,6 +61,7 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WbSunny
@@ -70,6 +72,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
@@ -98,6 +101,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -105,23 +109,37 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.example.ChatMessage
+import com.example.core.ai.AiProvenance
 import com.example.MainViewModel
 import com.example.core.data.PlannedTask
 import com.example.core.data.SavedZone
 import com.example.core.designsystem.GlassDatePickerSheet
 import com.example.core.designsystem.GlassDefaults
 import com.example.core.designsystem.GlassTimePickerSheet
+import com.example.core.designsystem.LocalReduceMotion
+import com.example.core.designsystem.Motion
 import com.example.core.designsystem.SectionHeader
 import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.rememberIs24Hour
 import com.example.core.designsystem.transparentCardColors
+import com.example.core.designsystem.LocalTabBarInsetHeight
+import com.example.core.designsystem.reportBarScroll
 import com.example.core.time.TimeFormats
 import com.example.feature.calendar.DEFAULT_EVENT_DURATION_MINUTES
 import com.example.feature.calendar.EventActionResult
@@ -153,6 +171,7 @@ fun AiScreen(
 ) {
     val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
     val aiLoading by viewModel.aiLoading.collectAsStateWithLifecycle()
+    val aiPartialText by viewModel.aiPartialText.collectAsStateWithLifecycle()
     val pendingDraft by viewModel.pendingDraft.collectAsStateWithLifecycle()
     val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
@@ -162,13 +181,18 @@ fun AiScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val reduceMotion = LocalReduceMotion.current
 
     // Auto-scroll to the freshest message as the conversation grows, but leave the scheduler
-    // visible on first load (only the welcome message exists then).
-    LaunchedEffect(chatMessages.size, aiLoading, pendingDraft) {
+    // visible on first load (only the welcome message exists then). Honor reduce-motion by
+    // jumping instantly instead of animating.
+    LaunchedEffect(chatMessages.size, aiLoading, aiPartialText, pendingDraft) {
         if (chatMessages.size > 1 || aiLoading) {
             val count = listState.layoutInfo.totalItemsCount
-            if (count > 0) listState.animateScrollToItem(count - 1)
+            if (count > 0) {
+                if (reduceMotion) listState.scrollToItem(count - 1)
+                else listState.animateScrollToItem(count - 1)
+            }
         }
     }
 
@@ -190,6 +214,7 @@ fun AiScreen(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
+                .reportBarScroll()
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
@@ -225,9 +250,22 @@ fun AiScreen(
                                 viewModel.sendAiMessage(prompt)
                             },
                             label = { Text(prompt) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                            },
                             colors = AssistChipDefaults.assistChipColors(
-                                labelColor = MaterialTheme.colorScheme.onSurface
-                            )
+                                labelColor = MaterialTheme.colorScheme.onSurface,
+                                leadingIconContentColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            // Announce as an actionable prompt suggestion for TalkBack.
+                            modifier = Modifier.semantics {
+                                role = Role.Button
+                                contentDescription = "Ask: $prompt"
+                            },
                         )
                     }
                 }
@@ -242,17 +280,41 @@ fun AiScreen(
             }
 
             items(chatMessages, key = { it.id }) { message ->
-                Bubble(message = message, hazeState = hazeState, modifier = Modifier.animateItem())
+                val isError = message.sender == "System Error"
+                Bubble(
+                    message = message,
+                    hazeState = hazeState,
+                    onRetry = if (isError) {{ viewModel.retryAiMessage(message.id) }} else null,
+                    // Springy per-message entrance so replies settle into place.
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = Motion.smooth(),
+                        placementSpec = Motion.smooth(),
+                        fadeOutSpec = Motion.smooth(),
+                    ),
+                )
             }
 
             item {
-                Column {
+                // Thinking/streaming indicator. Springy entrance to match message appear;
+                // a polite live region lets TalkBack announce that the assistant is working.
+                Column(
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        if (aiLoading) contentDescription = "Assistant is thinking"
+                    }
+                ) {
                     AnimatedVisibility(
                         visible = aiLoading,
-                        enter = fadeIn(animationSpec = tween(150)) + expandVertically(animationSpec = tween(200)),
-                        exit = fadeOut(animationSpec = tween(100)) + shrinkVertically(animationSpec = tween(150))
+                        enter = fadeIn(Motion.smooth()) +
+                            expandVertically(Motion.smooth()) +
+                            slideInVertically(Motion.bouncy()) { it / 2 },
+                        exit = fadeOut(Motion.snappy()) + shrinkVertically(Motion.smooth())
                     ) {
-                        TypingIndicator(hazeState = hazeState)
+                        if (aiPartialText != null) {
+                            StreamingPartialBubble(text = aiPartialText!!, hazeState = hazeState)
+                        } else {
+                            TypingIndicator(hazeState = hazeState)
+                        }
                     }
                 }
             }
@@ -280,19 +342,22 @@ fun AiScreen(
             Column(modifier = Modifier.align(Alignment.BottomEnd)) {
                 AnimatedVisibility(
                     visible = showScrollDown,
-                    enter = fadeIn(tween(200)) + scaleIn(tween(200), initialScale = 0.8f),
-                    exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.8f),
+                    enter = fadeIn(Motion.smooth()) + scaleIn(Motion.bouncy(), initialScale = 0.8f),
+                    exit = fadeOut(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.8f),
                 ) {
                     FilledTonalIconButton(
                         onClick = {
                             scope.launch {
                                 val count = listState.layoutInfo.totalItemsCount
-                                if (count > 0) listState.animateScrollToItem(count - 1)
+                                if (count > 0) {
+                                    if (reduceMotion) listState.scrollToItem(count - 1)
+                                    else listState.animateScrollToItem(count - 1)
+                                }
                             }
                         },
                         modifier = Modifier.padding(16.dp)
                     ) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to latest")
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to latest message")
                     }
                 }
             }
@@ -302,6 +367,7 @@ fun AiScreen(
         ChatComposer(
             value = inputText,
             onValueChange = { inputText = it },
+            isLoading = aiLoading,
             onSend = {
                 if (inputText.isNotBlank()) {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -346,7 +412,10 @@ private fun AssistantHeader(
             )
         }
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            // Read the title + subtitle as one node so TalkBack lands on the assistant identity once.
+            modifier = Modifier.weight(1f).semantics(mergeDescendants = true) {}
+        ) {
             Text(
                 text = "Meridian Assistant",
                 style = MaterialTheme.typography.titleLarge,
@@ -356,10 +425,14 @@ private fun AssistantHeader(
             Text(
                 text = "Schedule across zones · ask anything about time",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
             )
         }
-        AnimatedVisibility(visible = canClear, enter = fadeIn(), exit = fadeOut()) {
+        AnimatedVisibility(
+            visible = canClear,
+            enter = fadeIn(Motion.smooth()) + scaleIn(Motion.bouncy(), initialScale = 0.8f),
+            exit = fadeOut(Motion.snappy()) + scaleOut(Motion.snappy(), targetScale = 0.8f),
+        ) {
             IconButton(onClick = onClear) {
                 Icon(
                     imageVector = Icons.Default.DeleteSweep,
@@ -706,7 +779,7 @@ private fun SelectorButton(
     OutlinedButton(
         onClick = onClick,
         modifier = modifier,
-        shape = RoundedCornerShape(0.dp),
+        shape = RoundedCornerShape(16.dp),
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(8.dp))
@@ -720,9 +793,49 @@ private fun SelectorButton(
 }
 
 @Composable
+private fun StreamingPartialBubble(text: String, hazeState: HazeState) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        LiquidGlassSurface(
+            hazeState = hazeState,
+            tintColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 4.dp, bottomEnd = 16.dp),
+        ) {
+            ChatMarkdownText(
+                text = text,
+                textColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun TypingIndicator(hazeState: HazeState) {
     val transition = rememberInfiniteTransition(label = "typing")
-    Row(verticalAlignment = Alignment.Bottom) {
+    Row(
+        // Decorative dots convey "thinking" visually; the parent already announces it politely,
+        // so keep this row out of the TalkBack tree to avoid duplicate chatter.
+        modifier = Modifier.clearAndSetSemantics {},
+        verticalAlignment = Alignment.Bottom
+    ) {
         Box(
             modifier = Modifier
                 .size(28.dp)
@@ -775,16 +888,28 @@ private fun TypingIndicator(hazeState: HazeState) {
 private fun ChatComposer(
     value: String,
     onValueChange: (String) -> Unit,
+    isLoading: Boolean,
     onSend: () -> Unit,
 ) {
-    val canSend = value.isNotBlank()
-    val sendAlpha by animateFloatAsState(if (canSend) 1f else 0.4f, label = "sendAlpha")
+    val canSend = value.isNotBlank() && !isLoading
+    val sendAlpha by animateFloatAsState(
+        targetValue = if (canSend) 1f else 0.4f,
+        animationSpec = Motion.smooth(),
+        label = "sendAlpha",
+    )
+    // Send button gives a subtle spring-scale press feedback and pops when it becomes active.
+    val sendScale by animateFloatAsState(
+        targetValue = if (canSend) 1f else 0.9f,
+        animationSpec = Motion.bouncy(),
+        label = "sendScale",
+    )
     // The floating glass nav bar (≈72dp pill + 16dp inset) only needs clearing while it is
     // visible; once the keyboard is up the bar is hidden behind it, so collapse the lift and let
     // the composer sit snug above the IME.
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val tabBarInset = LocalTabBarInsetHeight.current
     val pillClearance by animateDpAsState(
-        targetValue = if (imeVisible) 0.dp else 96.dp,
+        targetValue = if (imeVisible) 0.dp else tabBarInset,
         label = "pillClearance"
     )
     Row(
@@ -823,15 +948,31 @@ private fun ChatComposer(
             onClick = onSend,
             enabled = canSend,
             modifier = Modifier
+                .graphicsLayer {
+                    scaleX = sendScale
+                    scaleY = sendScale
+                }
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = sendAlpha))
                 .size(48.dp)
         ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
-                contentDescription = "Send prompt",
-                tint = MaterialTheme.colorScheme.onPrimary
-            )
+            if (isLoading) {
+                // While the assistant is replying, the send button shows progress rather than
+                // accepting a second prompt.
+                CircularProgressIndicator(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .semantics { contentDescription = "Assistant is replying" },
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.Send,
+                    contentDescription = "Send prompt",
+                    tint = MaterialTheme.colorScheme.onPrimary
+                )
+            }
         }
     }
 }
@@ -877,22 +1018,39 @@ private fun DraftConfirmCard(
         shape = GlassDefaults.cardShape,
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "Proposed event",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-            )
-            Text(
-                text = draft.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = "$whenText · ${shortZone(draft.zoneId)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-            )
+            // Header + details read as one polite announcement when the draft first appears.
+            Column(
+                modifier = Modifier.semantics(mergeDescendants = true) {
+                    liveRegion = LiveRegionMode.Polite
+                }
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "Proposed event",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = draft.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "$whenText · ${shortZone(draft.zoneId)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = onConfirm, modifier = Modifier.weight(1f)) { Text("Add to plan") }
@@ -930,7 +1088,12 @@ private fun DraftConfirmCard(
 }
 
 @Composable
-private fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifier = Modifier) {
+private fun Bubble(
+    message: ChatMessage,
+    hazeState: HazeState,
+    onRetry: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     val isUser = message.isUser
     val isError = message.sender == "System Error"
     val alignment = if (isUser) Alignment.End else Alignment.Start
@@ -946,6 +1109,18 @@ private fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifie
     }
     val clipboardManager = LocalClipboardManager.current
     val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    // Spoken role prefix so TalkBack announces who is speaking before the message text.
+    val speaker = when {
+        isError -> "Error"
+        isUser -> "You said"
+        else -> "Assistant said"
+    }
+    fun copyMessage() {
+        clipboardManager.setText(AnnotatedString(message.text))
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+    }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -993,21 +1168,38 @@ private fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifie
                         }
                     )
                     .pointerInput(message.id) {
-                        detectTapGestures(
-                            onLongPress = {
-                                clipboardManager.setText(AnnotatedString(message.text))
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
+                        detectTapGestures(onLongPress = { copyMessage() })
+                    }
+                    // One coherent TalkBack node: "<speaker>: <text>", with a copy custom action
+                    // mirroring the long-press gesture (which touch-explore users can't perform).
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "$speaker: ${message.text}"
+                        customActions = listOf(
+                            CustomAccessibilityAction("Copy message") { copyMessage(); true }
                         )
                     }
                     .padding(14.dp)
             ) {
                 if (isError) {
-                    Text(
-                        text = message.text,
-                        color = textColor,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Column {
+                        Text(
+                            text = message.text,
+                            color = textColor,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        if (onRetry != null) {
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = onRetry) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Try again")
+                            }
+                        }
+                    }
                 } else {
                     ChatMarkdownText(
                         text = message.text,
@@ -1021,23 +1213,33 @@ private fun Bubble(message: ChatMessage, hazeState: HazeState, modifier: Modifie
                 }
             }
         }
-        // Provenance badge: shows whether this reply was generated on-device (Gemini Nano) or
-        // fell back to the cloud. Only meaningful for non-error assistant messages.
+        // Provenance badge: shows where this reply was generated (on-device, cloud, rules, cache).
         if (!isUser && !isError) {
-            message.onDevice?.let { onDevice ->
+            message.provenance?.let { provenance ->
                 Spacer(Modifier.height(4.dp))
-                InferenceSourceBadge(onDevice = onDevice, hazeState = hazeState, modifier = Modifier.padding(start = 36.dp))
+                InferenceSourceBadge(provenance = provenance, hazeState = hazeState, modifier = Modifier.padding(start = 36.dp))
             }
         }
     }
 }
 
 @Composable
-private fun InferenceSourceBadge(onDevice: Boolean, hazeState: HazeState, modifier: Modifier = Modifier) {
-    val label = if (onDevice) "On-device · Gemini Nano" else "Cloud Gemini"
-    val icon = if (onDevice) Icons.Default.Memory else Icons.Default.Cloud
-    val tint = if (onDevice) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+private fun InferenceSourceBadge(provenance: AiProvenance, hazeState: HazeState, modifier: Modifier = Modifier) {
+    val label = when (provenance) {
+        AiProvenance.ON_DEVICE -> "On-device · Gemini Nano"
+        AiProvenance.CLOUD -> "Cloud Gemini"
+        AiProvenance.RULES -> "On-device · Rules"
+        AiProvenance.CACHED -> "Instant · Cached"
+    }
+    val icon = when (provenance) {
+        AiProvenance.CLOUD -> Icons.Default.Cloud
+        AiProvenance.CACHED -> Icons.Default.Bolt
+        else -> Icons.Default.Memory
+    }
+    val tint = when (provenance) {
+        AiProvenance.CLOUD -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+        else -> MaterialTheme.colorScheme.primary
+    }
     LiquidGlassSurface(
         hazeState = hazeState,
         modifier = modifier,

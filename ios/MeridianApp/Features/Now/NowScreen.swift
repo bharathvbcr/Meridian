@@ -14,6 +14,7 @@
 // ticker advances the displayed time when not scrubbing.
 
 import SwiftUI
+import SwiftData
 
 // MARK: - NowScreen
 
@@ -21,6 +22,8 @@ struct NowScreen: View {
 
     @Environment(\.mainViewModel) private var viewModelOrNil
     @Environment(TimeEngine.self) private var timeEngine
+    @Environment(\.selectTab) private var selectTab
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // 1s ticker; we read TimeEngine.displayDate so scrubbing stays authoritative.
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -29,9 +32,25 @@ struct NowScreen: View {
     @State private var showFavoritesOnly = true
     @State private var addingAnchorRole: ZoneAnchorRole?
     @State private var showAddZoneSheet = false
+    @State private var resolvingLocation = false
+
+    // Long-press drag-to-reorder state (Android NowScreen: draggingKey/draggingOffset).
+    @State private var rowFrames: [String: CGRect] = [:]
+    @State private var draftOrder: [String]? = nil
+    @State private var draggingId: String? = nil
+    @State private var dragPointerY: CGFloat = 0
+    @State private var didDrag = false
+    @State private var dragStartTrigger = 0
+    /// Hold-still-and-release target: opens the zone's options dialog (Android: menuZoneId).
+    @State private var menuZone: SavedZone? = nil
+    @State private var addContactZone: SavedZone? = nil
 
     // The displayed instant — scrub-aware.
     private var now: Date { timeEngine.displayDate }
+
+    /// The one section-divider tone used across this screen — mirrors the hairline
+    /// `SectionHeader` draws (white @ 0.10, 1pt) so manual rules never drift from it.
+    private let sectionDividerColor = Color.white.opacity(0.10)
 
     var body: some View {
         ZStack {
@@ -67,6 +86,13 @@ struct NowScreen: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: MeridianSpacing.lg.rawValue) {
 
+                Color.clear
+                    .frame(height: 0)
+                    .reportScrollOffset(in: "nowScroll")
+
+                MeridianWordmark()
+                    .padding(.top, 4)
+
                 header(localZoneId: localZoneId)
 
                 TimeAndLocationCard(
@@ -75,8 +101,10 @@ struct NowScreen: View {
                     localZoneId: localZoneId,
                     residence: residence,
                     homeCountry: viewModel.settings.homeCountryEnabled ? homeCountry : nil,
+                    resolvingLocation: resolvingLocation,
                     onPickResidence: { addingAnchorRole = .residence },
-                    onPickHomeCountry: { addingAnchorRole = .homeCountry }
+                    onPickHomeCountry: { addingAnchorRole = .homeCountry },
+                    onUseLocation: { resolveHome(viewModel) }
                 )
 
                 SolarDaylightWidget(zoneId: solarZoneId, date: now, use24Hour: use24Hour)
@@ -92,10 +120,13 @@ struct NowScreen: View {
             .padding(.horizontal, MeridianSpacing.lg.rawValue)
             .padding(.top, MeridianSpacing.lg.rawValue)
         }
-        // Anchor picker (residence / home country).
+        .coordinateSpace(name: "nowScroll")
+        // Anchor picker (residence / home country). The residence picker also offers
+        // "Use current location" (Android: HomeCityPickerSheet's location row).
         .sheet(item: $addingAnchorRole) { role in
             AnchorZonePickerSheet(
                 title: role == .residence ? "Choose your home city" : "Choose a city",
+                onUseLocation: role == .residence ? { resolveHome(viewModel) } : nil,
                 search: { await viewModel.searchTimeZones($0) },
                 onSelect: { zoneId, name in
                     viewModel.setAnchorZone(id: zoneId, displayName: name, role: role)
@@ -135,16 +166,24 @@ struct NowScreen: View {
         let offset = TimeFormats.utcOffset(for: localZoneId, at: now)
 
         return VStack(alignment: .leading, spacing: 4) {
+            // Crossfade at the morning/afternoon/evening boundaries (Android:
+            // AnimatedContent with a 400 ms fade).
             Text(greeting)
                 .font(.displayMedium)
                 .foregroundStyle(MeridianColors.onBackground)
+                .contentTransition(.opacity)
+                // Spring-only motion (Meridian rule); reduce-motion skips the crossfade.
+                .animation(reduceMotion ? nil : Motion.smooth(), value: greeting)
 
             Text("\(abbreviation) · \(offset) · \(localZoneId)")
                 .font(.bodyMedium)
                 .foregroundStyle(MeridianColors.onBackground.opacity(0.6))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 8)
+        .padding(.vertical, MeridianSpacing.sm.rawValue)
+        // One VoiceOver unit: "Good morning, PST · UTC+0 · America/Los_Angeles".
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
     }
 
     // MARK: - Agenda
@@ -162,10 +201,12 @@ struct NowScreen: View {
             SectionHeader(title: "Upcoming Agenda")
 
             if upcoming.isEmpty {
-                emptyCard(
+                EmptyStateCard(
                     icon: "calendar.badge.checkmark",
                     title: "Your schedule is clear",
-                    message: "Use the Plan tab or AI Assistant to schedule your next multi-zone meeting."
+                    message: "Use the Plan tab or AI Assistant to schedule your next multi-zone meeting.",
+                    actionLabel: "Open Plan",
+                    action: { selectTab(.plan) }
                 )
             } else {
                 ForEach(Array(upcoming)) { task in
@@ -186,7 +227,7 @@ struct NowScreen: View {
         let favorites = watchlist.filter(\.isFavorite)
         let hasFavorites = !favorites.isEmpty
         let favOnly = showFavoritesOnly && hasFavorites
-        let displayed = favOnly ? favorites : watchlist
+        let displayed = applyDraftOrder(favOnly ? favorites : watchlist)
 
         VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue) {
             HStack {
@@ -198,63 +239,252 @@ struct NowScreen: View {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 22))
                         .foregroundStyle(MeridianColors.primary)
+                        // Meet the 44pt HIG minimum tap target (icon stays 22pt).
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Add zone")
+                .accessibilityHint("Search for a city and pin it to your watchlist")
             }
 
             if hasFavorites {
-                HStack(spacing: 8) {
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
                     MeridianChip(label: "All", isSelected: !favOnly) { showFavoritesOnly = false }
                     MeridianChip(label: "Favorites", isSelected: favOnly) { showFavoritesOnly = true }
                 }
             }
 
+            // Shared section divider (same 0.10 white / 1pt SectionHeader draws), kept as
+            // a private token so it never drifts from the rest of the screen.
             Rectangle()
-                .fill(Color.white.opacity(0.10))
+                .fill(sectionDividerColor)
                 .frame(height: 1)
 
             if watchlist.isEmpty {
-                emptyCard(
+                EmptyStateCard(
                     icon: "globe",
                     title: "Watchlist is empty",
-                    message: "Tap + to search and pin cities to monitor them here."
+                    message: "Tap + to search and pin cities to monitor them here.",
+                    actionLabel: "Add a city",
+                    action: { showAddZoneSheet = true }
                 )
             } else if displayed.isEmpty {
-                emptyCard(
+                EmptyStateCard(
                     icon: "star",
                     title: "No favorites yet",
-                    message: "Star a zone to see it here."
+                    message: "Star a zone to see it here, or browse all zones.",
+                    actionLabel: "Show all",
+                    action: { showFavoritesOnly = false }
                 )
             } else {
                 ForEach(Array(displayed.enumerated()), id: \.element.id) { index, zone in
-                    WatchlistZoneCard(
+                    watchlistRow(
                         zone: zone,
-                        date: now,
-                        use24Hour: use24Hour,
-                        isFirst: index == 0,
-                        isLast: index == displayed.count - 1,
-                        workStartHour: viewModel.settings.defaultWorkStartHour,
-                        workEndHour: viewModel.settings.defaultWorkEndHour,
-                        contacts: contactsForZone(zone, people: viewModel.people, savedZones: viewModel.savedZones),
-                        onAddContact: { name in
-                            viewModel.addPerson(
-                                name: name,
-                                zoneId: zone.id,
-                                locationName: zone.displayName,
-                                isFavorite: true
-                            )
-                        },
-                        onRemoveContact: { viewModel.deletePerson(id: $0) },
-                        onToggleContactFavorite: { viewModel.togglePersonFavorite(id: $0) },
-                        onToggleZoneFavorite: { viewModel.toggleZoneFavorite(id: zone.id) },
-                        onMoveUp: { viewModel.reorderZone(id: zone.id, direction: -1) },
-                        onMoveDown: { viewModel.reorderZone(id: zone.id, direction: 1) },
-                        onSetHome: { viewModel.setHomeZone(id: zone.id, displayName: zone.displayName) },
-                        onDelete: { viewModel.removeZone(id: zone.id) }
+                        index: index,
+                        count: displayed.count,
+                        viewModel: viewModel,
+                        use24Hour: use24Hour
                     )
                 }
             }
         }
+        .coordinateSpace(name: "watchlist")
+        .onPreferenceChange(WatchlistRowFramesKey.self) { rowFrames = $0 }
+        .sensoryFeedback(.impact(weight: .medium), trigger: dragStartTrigger)
+        // Hold-still-and-release opens the zone's options (Android: the drag detector
+        // opens the card's dropdown when the press never moved).
+        .confirmationDialog(
+            menuZone?.displayName ?? "",
+            isPresented: Binding(get: { menuZone != nil }, set: { if !$0 { menuZone = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let zone = menuZone {
+                Button(zone.isFavorite ? "Unfavorite" : "Favorite") {
+                    viewModel.toggleZoneFavorite(id: zone.id)
+                }
+                Button("Add contact to \(zone.displayName)") { addContactZone = zone }
+                Button("Set as home") {
+                    viewModel.setHomeZone(id: zone.id, displayName: zone.displayName)
+                }
+                Button("Move up") { viewModel.reorderZone(id: zone.id, direction: -1) }
+                Button("Move down") { viewModel.reorderZone(id: zone.id, direction: 1) }
+                Button("Remove", role: .destructive) { viewModel.removeZone(id: zone.id) }
+            }
+        }
+        .sheet(item: $addContactZone) { zone in
+            AddContactToZoneSheet(zoneName: zone.displayName) { name in
+                viewModel.addPerson(
+                    name: name,
+                    zoneId: zone.id,
+                    locationName: zone.displayName,
+                    isFavorite: true
+                )
+            }
+        }
+    }
+
+    /// A single watchlist row: the zone card plus its drag-lift, drag gesture, and the
+    /// VoiceOver reorder actions. Extracted from `watchlistSection`'s `ForEach` so the
+    /// modifier chain type-checks in reasonable time.
+    @ViewBuilder
+    private func watchlistRow(
+        zone: SavedZone,
+        index: Int,
+        count: Int,
+        viewModel: MainViewModel,
+        use24Hour: Bool
+    ) -> some View {
+        WatchlistZoneCard(
+            zone: zone,
+            date: now,
+            use24Hour: use24Hour,
+            isFirst: index == 0,
+            isLast: index == count - 1,
+            workStartHour: viewModel.settings.defaultWorkStartHour,
+            workEndHour: viewModel.settings.defaultWorkEndHour,
+            contacts: contactsForZone(zone, people: viewModel.people, savedZones: viewModel.savedZones),
+            onAddContact: { name in
+                viewModel.addPerson(
+                    name: name,
+                    zoneId: zone.id,
+                    locationName: zone.displayName,
+                    isFavorite: true
+                )
+            },
+            onRemoveContact: { viewModel.deletePerson(id: $0) },
+            onToggleContactFavorite: { viewModel.togglePersonFavorite(id: $0) },
+            onToggleZoneFavorite: { viewModel.toggleZoneFavorite(id: zone.id) },
+            onMoveUp: { viewModel.reorderZone(id: zone.id, direction: -1) },
+            onMoveDown: { viewModel.reorderZone(id: zone.id, direction: 1) },
+            onSetHome: { viewModel.setHomeZone(id: zone.id, displayName: zone.displayName) },
+            onDelete: { viewModel.removeZone(id: zone.id) }
+        )
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: WatchlistRowFramesKey.self,
+                    value: [zone.id: geo.frame(in: .named("watchlist"))]
+                )
+            }
+        }
+        // Dragged-card lift (Android: scale 1.04, alpha 0.93, elevated, zIndex 1).
+        .offset(y: dragOffset(for: zone.id))
+        .scaleEffect(draggingId == zone.id ? 1.04 : 1)
+        .opacity(draggingId == zone.id ? 0.93 : 1)
+        .shadow(
+            color: .black.opacity(draggingId == zone.id ? 0.45 : 0),
+            radius: 14, y: 8
+        )
+        .zIndex(draggingId == zone.id ? 1 : 0)
+        .gesture(reorderGesture(for: zone, viewModel: viewModel))
+        // VoiceOver alternative to the long-press drag: the drag/menu gestures
+        // are unreachable with VoiceOver on, so expose the same reorder actions
+        // (and label the row's zone + wall-clock time) here.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(watchlistRowAccessibilityLabel(zone, use24Hour: use24Hour))
+        .accessibilityHint("Actions available for reordering and options")
+        .accessibilityAction(named: Text("Move up")) {
+            viewModel.reorderZone(id: zone.id, direction: -1)
+        }
+        .accessibilityAction(named: Text("Move down")) {
+            viewModel.reorderZone(id: zone.id, direction: 1)
+        }
+        .accessibilityAction(named: Text(zone.isFavorite ? "Unfavorite" : "Favorite")) {
+            viewModel.toggleZoneFavorite(id: zone.id)
+        }
+        .accessibilityAction(named: Text("Remove")) {
+            viewModel.removeZone(id: zone.id)
+        }
+    }
+
+    // MARK: - Drag-to-reorder (Android NowScreen drag detector)
+
+    /// Renders the in-flight draft order while a drag is active.
+    private func applyDraftOrder(_ zones: [SavedZone]) -> [SavedZone] {
+        guard let draft = draftOrder else { return zones }
+        return zones.sorted {
+            (draft.firstIndex(of: $0.id) ?? .max) < (draft.firstIndex(of: $1.id) ?? .max)
+        }
+    }
+
+    /// Keeps the dragged card glued to the finger: its laid-out frame already reflects
+    /// any in-flight reorder, so the visual offset is simply pointer − current center.
+    private func dragOffset(for id: String) -> CGFloat {
+        guard draggingId == id, let frame = rowFrames[id] else { return 0 }
+        return dragPointerY - frame.midY
+    }
+
+    private func reorderGesture(for zone: SavedZone, viewModel: MainViewModel) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named("watchlist")))
+            .onChanged { value in
+                switch value {
+                case .first(true):
+                    // Long press recognised → lift the card (Android: LongPress haptic).
+                    if draggingId == nil {
+                        draggingId = zone.id
+                        draftOrder = applyDraftOrder(currentWatchlistIds(viewModel)).map(\.id)
+                        dragPointerY = rowFrames[zone.id]?.midY ?? 0
+                        didDrag = false
+                        dragStartTrigger &+= 1
+                    }
+                case .second(true, let drag?):
+                    guard draggingId == zone.id else { return }
+                    dragPointerY = drag.location.y
+                    if abs(drag.translation.height) > 6 { didDrag = true }
+                    // Live shuffle: move the dragged id to the row under the finger.
+                    if var order = draftOrder,
+                       let target = rowFrames.first(where: {
+                           $0.key != zone.id && $0.value.minY <= dragPointerY && dragPointerY < $0.value.maxY
+                       })?.key,
+                       let from = order.firstIndex(of: zone.id),
+                       let to = order.firstIndex(of: target),
+                       from != to {
+                        order.remove(at: from)
+                        order.insert(zone.id, at: to)
+                        // Spring shuffle; reduce-motion applies the reorder instantly.
+                        if reduceMotion {
+                            draftOrder = order
+                        } else {
+                            withAnimation(Motion.smooth()) { draftOrder = order }
+                        }
+                    }
+                default:
+                    break
+                }
+            }
+            .onEnded { _ in
+                defer {
+                    draggingId = nil
+                    draftOrder = nil
+                    didDrag = false
+                }
+                guard draggingId == zone.id else { return }
+                if didDrag, let order = draftOrder {
+                    // Commit: full watchlist order = dragged draft merged over the rest.
+                    let all = currentWatchlistIds(viewModel).map(\.id)
+                    let committed = order + all.filter { !order.contains($0) }
+                    viewModel.reorderZones(ids: committed)
+                } else {
+                    // Hold-still-and-release → options menu (Android parity).
+                    menuZone = zone
+                }
+            }
+    }
+
+    private func currentWatchlistIds(_ viewModel: MainViewModel) -> [SavedZone] {
+        let watchlist = viewModel.savedZones.filter { !$0.isNowAnchor }
+        let favorites = watchlist.filter(\.isFavorite)
+        return (showFavoritesOnly && !favorites.isEmpty) ? favorites : watchlist
+    }
+
+    /// One combined VoiceOver phrase for a watchlist row (zone name, wall-clock time, and
+    /// favorite state) — the drag/menu gestures are unreachable with VoiceOver, so the row
+    /// itself must announce what it is.
+    private func watchlistRowAccessibilityLabel(_ zone: SavedZone, use24Hour: Bool) -> String {
+        let time = TimeFormats.hourMinute(date: now, timeZoneId: zone.id, use24Hour: use24Hour)
+        let fav = zone.isFavorite ? ", favorite" : ""
+        return "\(zone.displayName), \(time)\(fav)"
     }
 
     // MARK: - Contact locations (orphan starred contacts not pinned to a saved zone)
@@ -264,9 +494,8 @@ struct NowScreen: View {
         let groups = unassignedContactGroups(people: viewModel.people, savedZones: viewModel.savedZones)
         if !groups.isEmpty {
             VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue) {
-                Text("Contact locations")
-                    .font(.titleMedium)
-                    .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
+                // Shared section chrome so weight + divider match every other section.
+                SectionHeader(title: "Contact locations")
 
                 ForEach(groups) { group in
                     ContactLocationRow(
@@ -289,25 +518,15 @@ struct NowScreen: View {
         }
     }
 
-    // MARK: - Empty card helper
+    // MARK: - Location resolve
 
-    private func emptyCard(icon: String, title: String, message: String) -> some View {
-        VStack(spacing: MeridianSpacing.sm.rawValue) {
-            Image(systemName: icon)
-                .font(.system(size: 36, weight: .light))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(MeridianColors.primary.opacity(0.5))
-            Text(title)
-                .font(.titleMedium)
-                .foregroundStyle(MeridianColors.onSurface)
-            Text(message)
-                .font(.bodyMedium)
-                .multilineTextAlignment(.center)
-                .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
+    private func resolveHome(_ viewModel: MainViewModel) {
+        guard !resolvingLocation else { return }
+        resolvingLocation = true
+        Task {
+            _ = await viewModel.resolveHomeFromLocation()
+            resolvingLocation = false
         }
-        .frame(maxWidth: .infinity)
-        .padding(MeridianSpacing.xl.rawValue)
-        .liquidGlass(cornerRadius: MeridianRadius.medium.rawValue)
     }
 }
 
@@ -315,6 +534,18 @@ struct NowScreen: View {
 
 extension ZoneAnchorRole: Identifiable {
     var id: String { rawValue }
+}
+
+// MARK: - WatchlistRowFramesKey
+
+/// Frames of the watchlist rows in the "watchlist" coordinate space, keyed by zone
+/// id — the layout data the drag-to-reorder gesture navigates by (Android reads
+/// `LazyListState.layoutInfo.visibleItemsInfo`).
+private struct WatchlistRowFramesKey: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
 }
 
 // MARK: - TimeAndLocationCard
@@ -327,8 +558,12 @@ private struct TimeAndLocationCard: View {
     let localZoneId: String
     let residence: SavedZone?
     let homeCountry: SavedZone?
+    /// Spinner state for the residence "Use location" button (Android: isResolving).
+    let resolvingLocation: Bool
     let onPickResidence: () -> Void
     let onPickHomeCountry: () -> Void
+    /// Resolves the device location into the residence anchor; residence-only.
+    let onUseLocation: () -> Void
 
     private var localTimeString: String {
         TimeFormats.hourMinuteSecond(date: date, timeZoneId: localZoneId, use24Hour: use24Hour)
@@ -371,7 +606,10 @@ private struct TimeAndLocationCard: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(localTimeString)
-                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        // Type-scale token (displayMedium 36) so the hero tracks Dynamic
+                        // Type, keeping the rounded/monospaced hero treatment.
+                        .font(.displayMedium)
+                        .fontDesign(.rounded)
                         .monospacedDigit()
                         .foregroundStyle(MeridianColors.primary)
                         .minimumScaleFactor(0.6)
@@ -383,8 +621,12 @@ private struct TimeAndLocationCard: View {
                         .font(.bodyMedium)
                         .foregroundStyle(MeridianColors.onSurfaceVariant)
                 }
+                // Group the time/date/offset as a single VoiceOver unit; the analog clock
+                // is decorative alongside it.
+                .accessibilityElement(children: .combine)
                 Spacer()
                 AnalogClockView(date: date, timeZoneId: localZoneId)
+                    .accessibilityHidden(true)
             }
 
             let clockVisibility = anchorClockVisibility
@@ -397,7 +639,8 @@ private struct TimeAndLocationCard: View {
                 emptySubtitle: "Your usual base — campus city or apartment.",
                 showChange: true,
                 showDigitalClock: clockVisibility.residence,
-                onPick: onPickResidence
+                onPick: onPickResidence,
+                onUseLocation: onUseLocation
             )
 
             if let homeCountry {
@@ -409,7 +652,8 @@ private struct TimeAndLocationCard: View {
                     emptySubtitle: "",
                     showChange: false,
                     showDigitalClock: clockVisibility.homeCountry,
-                    onPick: onPickHomeCountry
+                    onPick: onPickHomeCountry,
+                    onUseLocation: nil
                 )
             }
         }
@@ -443,7 +687,8 @@ private struct TimeAndLocationCard: View {
         emptySubtitle: String,
         showChange: Bool,
         showDigitalClock: Bool,
-        onPick: @escaping () -> Void
+        onPick: @escaping () -> Void,
+        onUseLocation: (() -> Void)?
     ) -> some View {
         Divider()
             .overlay(MeridianColors.onSurface.opacity(0.1))
@@ -482,7 +727,7 @@ private struct TimeAndLocationCard: View {
                                 .foregroundStyle(MeridianColors.onSurfaceVariant)
                         }
                         Text(subtitle)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.labelMedium)
                             .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(showDigitalClock ? 0.7 : 1.0))
                     }
                 }
@@ -523,20 +768,51 @@ private struct TimeAndLocationCard: View {
                     }
                     Spacer()
                 }
-                Button {
-                    onPick()
-                } label: {
-                    Label("Pick city", systemImage: "magnifyingglass")
-                        .font(.titleMedium)
-                        .foregroundStyle(MeridianColors.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background {
-                            RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
-                                .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
+                HStack(spacing: 10) {
+                    Button {
+                        onPick()
+                    } label: {
+                        Label("Pick city", systemImage: "magnifyingglass")
+                            .font(.titleMedium)
+                            .foregroundStyle(MeridianColors.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background {
+                                RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                                    .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+
+                    // Resolve from device location (Android: second "Use location" button
+                    // with an in-button spinner while resolving).
+                    if let onUseLocation {
+                        Button {
+                            onUseLocation()
+                        } label: {
+                            HStack(spacing: 6) {
+                                if resolvingLocation {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .tint(MeridianColors.primary)
+                                } else {
+                                    Image(systemName: "location.fill")
+                                }
+                                Text(resolvingLocation ? "Locating…" : "Use location")
+                            }
+                            .font(.titleMedium)
+                            .foregroundStyle(MeridianColors.primary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background {
+                                RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                                    .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .disabled(resolvingLocation)
+                    }
                 }
-                .buttonStyle(.plain)
             }
         }
     }
@@ -550,6 +826,8 @@ private struct AgendaItemRow: View {
     let now: Date
     let use24Hour: Bool
     let onDelete: () -> Void
+
+    @State private var deleteTrigger = 0
 
     private var minutesDiff: Int {
         Int((task.timestamp.timeIntervalSince(now) / 60).rounded(.towardZero))
@@ -570,8 +848,17 @@ private struct AgendaItemRow: View {
 
     private var tagColor: Color {
         if minutesDiff < 0 { return MeridianColors.onSurfaceVariant.opacity(0.4) }
-        if minutesDiff < 60 { return Color.red }
+        // Imminent (< 1h): the M3 dark-error tone tuned for this canvas, not raw red.
+        if minutesDiff < 60 { return MeridianColors.error }
         return MeridianColors.primary
+    }
+
+    /// Text equivalent of the urgency dot's color so red/grey semantics reach VoiceOver
+    /// and colorblind users (finding: the dot is otherwise color-only).
+    private var urgencyLabel: String {
+        if minutesDiff < 0 { return relativeText }        // e.g. "12 min ago"
+        if minutesDiff < 60 { return "Due soon, \(relativeText)" }
+        return relativeText
     }
 
     private var zoneLabel: String? {
@@ -587,6 +874,7 @@ private struct AgendaItemRow: View {
             Circle()
                 .fill(tagColor)
                 .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
@@ -597,19 +885,25 @@ private struct AgendaItemRow: View {
                     .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurfaceVariant)
             }
+            // Combine title + detail and fold in the urgency the dot color encodes.
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(task.title), \(urgencyLabel)")
 
             Spacer()
 
             Button {
+                deleteTrigger &+= 1   // Haptic on dismiss (Android: LongPress haptic).
                 onDelete()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(0.6))
-                    .frame(width: 28, height: 28)
+                    // Bump to the 44pt HIG minimum (was 28pt).
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("Dismiss")
+            .accessibilityLabel("Dismiss \(task.title)")
+            .sensoryFeedback(.impact(weight: .medium), trigger: deleteTrigger)
         }
         .padding(14)
         .opacity(minutesDiff < -30 ? 0.55 : 1)
@@ -617,6 +911,12 @@ private struct AgendaItemRow: View {
             cornerRadius: MeridianRadius.small.rawValue,
             tint: MeridianColors.primary
         )
+        .contextMenu {
+            Button("Dismiss event", systemImage: "xmark.circle", role: .destructive) {
+                deleteTrigger &+= 1
+                onDelete()
+            }
+        }
     }
 
     private var detailLine: String {
@@ -658,7 +958,9 @@ func contactsForZone(_ zone: SavedZone, people: [Person], savedZones: [SavedZone
 
 /// A bucket of starred contacts in one IANA zone not pinned to any saved zone
 /// (Android `ParticipantLocationGroup` for orphans).
-struct ContactLocationGroup: Identifiable, Sendable {
+// Holds non-`Sendable` SwiftData `@Model` `Person` values, used only on the main actor by the
+// Now screen, so this wrapper is intentionally not `Sendable`.
+struct ContactLocationGroup: Identifiable {
     let zoneId: String
     let displayName: String
     let people: [Person]
@@ -748,7 +1050,9 @@ private struct ContactLocationRow: View {
                 }
                 Spacer()
                 Text(timeString)
-                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    // headlineMedium (20 semibold) via token; rounded design retained.
+                    .font(.headlineMedium)
+                    .fontDesign(.rounded)
                     .monospacedDigit()
                     .foregroundStyle(MeridianColors.primary)
             }
@@ -765,14 +1069,22 @@ private struct ContactLocationRow: View {
                         Image(systemName: person.isFavorite ? "star.fill" : "star")
                             .font(.system(size: 14))
                             .foregroundStyle(person.isFavorite ? MeridianColors.daylightAccent : MeridianColors.onSurface.opacity(0.35))
+                            // 44pt HIG tap target (icon stays 14pt).
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel(person.isFavorite ? "Unfavorite \(person.name)" : "Favorite \(person.name)")
                     Button {
                         onRemoveContact(person.id)
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 12))
-                            .foregroundStyle(Color.red.opacity(0.7))
+                            // Route destructive tone through the error token, not raw red.
+                            .foregroundStyle(MeridianColors.error.opacity(0.7))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("Remove \(person.name)")
                 }
             }
 
@@ -780,9 +1092,13 @@ private struct ContactLocationRow: View {
                 showAddContact = true
             } label: {
                 Label("Add contact", systemImage: "person.badge.plus")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.labelMedium)
                     .foregroundStyle(MeridianColors.primary)
+                    // Keep the tappable row at the 44pt minimum height.
+                    .frame(minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
             }
+            .accessibilityHint("Adds a contact to \(group.displayName)")
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)

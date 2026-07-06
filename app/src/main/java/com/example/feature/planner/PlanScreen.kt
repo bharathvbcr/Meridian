@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
@@ -47,14 +49,23 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.core.content.ContextCompat
 import dev.chrisbanes.haze.HazeState
+import com.example.core.designsystem.EmptyStateCard
+import com.example.core.designsystem.LocalTabBarInsetHeight
 import com.example.core.designsystem.Motion
 import com.example.core.designsystem.LiquidGlassSurface
 import com.example.core.designsystem.liquidGlass
 import com.example.core.designsystem.MeridianWordmark
+import com.example.core.designsystem.reportBarScroll
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import com.example.MainViewModel
@@ -72,9 +83,12 @@ import java.time.ZonedDateTime
 fun PlanScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier,
-    hazeState: HazeState = remember { HazeState() }
+    hazeState: HazeState = remember { HazeState() },
+    onNavigate: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val density = LocalDensity.current
     val savedZones by viewModel.savedZones.collectAsStateWithLifecycle()
     val people by viewModel.people.collectAsStateWithLifecycle()
     val plannedTasks by viewModel.plannedTasks.collectAsStateWithLifecycle()
@@ -178,10 +192,22 @@ fun PlanScreen(
     }
 
     val wideLayout = LocalConfiguration.current.screenWidthDp >= 600
+    val tabBarInset = LocalTabBarInsetHeight.current
     val dialBottomPadding by animateDpAsState(
-        targetValue = if (wideLayout) 24.dp else 96.dp,
+        targetValue = if (wideLayout) 24.dp else tabBarInset,
         animationSpec = Motion.smooth(),
         label = "planDialBottomPadding"
+    )
+
+    // Measured height of the pinned dial (collapsed pill vs. expanded panel, and it grows with
+    // Dynamic Type). Drives the list's bottom spacer so the last rows always clear the dial +
+    // nav bar instead of relying on a fixed 240dp guess. Falls back to a sensible default
+    // until the first measurement lands.
+    var measuredDialHeight by remember { mutableStateOf(120.dp) }
+    val listBottomClearance by animateDpAsState(
+        targetValue = measuredDialHeight + dialBottomPadding + 24.dp,
+        animationSpec = Motion.smooth(),
+        label = "planListBottomClearance"
     )
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -213,6 +239,7 @@ fun PlanScreen(
             .statusBarsPadding()
             // Keep the "Meeting Title" field clear of the keyboard, matching the World Clock screen.
             .imePadding()
+            .reportBarScroll()
             .padding(horizontal = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
@@ -223,7 +250,13 @@ fun PlanScreen(
                     .padding(top = 4.dp, bottom = 8.dp)
             )
         }
-        item { PlannerHeader() }
+        item {
+            // Expose the screen title as a TalkBack heading so this long list is navigable by
+            // headings, matching every SectionLabel below (which SectionHeader already marks).
+            Box(modifier = Modifier.semantics(mergeDescendants = true) { heading() }) {
+                PlannerHeader()
+            }
+        }
         item {
             LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             DetailsCard(
@@ -281,7 +314,9 @@ fun PlanScreen(
             )
             }
         }
-        item { SectionLabel("YOUR CALENDAR", "Events from your device calendar.") }
+        // No SectionLabel here: CalendarEventsCard renders its own "Your Calendar" CardHeader,
+        // so a section label above it would duplicate the title back-to-back. This mirrors how
+        // FAIR SLOTS' SlotCard carries no redundant title under its section label.
         item {
             LiquidGlassSurface(hazeState = hazeState, modifier = Modifier.fillMaxWidth()) {
             CalendarEventsCard(
@@ -315,6 +350,8 @@ fun PlanScreen(
                 SlotsEmptyState(
                     modifier = Modifier.fillMaxWidth(),
                     hint = emptyHint,
+                    actionLabel = "Pick another day",
+                    onAction = { showJumpModal = true },
                 )
                 }
             }
@@ -340,8 +377,16 @@ fun PlanScreen(
             }
             item {
                 OutlinedButton(
-                    onClick = { viewModel.createRotatingSeries(rankedSlots, 4, localZoneId) },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick = {
+                        // Consequential action → a LongPress confirms the tap physically, matching
+                        // the duration chips in WindowCard (north-star: springy/haptic feedback).
+                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        viewModel.createRotatingSeries(rankedSlots, 4, localZoneId)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .semantics(mergeDescendants = true) {},
                 ) {
                     Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -350,7 +395,21 @@ fun PlanScreen(
             }
         }
 
-        if (plannedTasks.isNotEmpty()) {
+        if (plannedTasks.isEmpty()) {
+            item {
+                SectionLabel("YOUR PLAN", "Events from Quick Schedule and the AI assistant.")
+            }
+            item {
+                EmptyStateCard(
+                    icon = Icons.Default.Event,
+                    title = "Nothing scheduled yet",
+                    message = "Save a fair slot above, use Quick Schedule in AI, or ask the assistant to plan a meeting.",
+                    hazeState = hazeState,
+                    actionLabel = "Ask AI",
+                    onAction = { onNavigate("ai") },
+                )
+            }
+        } else {
             item { SectionLabel("YOUR PLAN  (${plannedTasks.size})", "Events from Quick Schedule and the AI assistant.") }
             items(plannedTasks, key = { it.id }) { task ->
                 PlannedTaskRow(
@@ -366,8 +425,11 @@ fun PlanScreen(
         }
 
         item {
-            // Leave room so the last rows clear the pinned dial and the nav bar.
-            Spacer(Modifier.height(240.dp))
+            // Leave room so the last rows clear the pinned dial and the nav bar. Derived from the
+            // measured dial height (which grows with Dynamic Type and shrinks to a pill when
+            // collapsed) plus its bottom padding — not a fixed 240dp guess that over/under-shoots.
+            val bottomClearance = if (rankedSlots.isNotEmpty()) listBottomClearance else tabBarInset
+            Spacer(Modifier.height(bottomClearance))
         }
     }
 
@@ -383,6 +445,15 @@ fun PlanScreen(
                 .navigationBarsPadding()
                 .padding(start = 16.dp, end = 16.dp, bottom = dialBottomPadding)
                 .then(if (wideLayout) Modifier.widthIn(max = 520.dp) else Modifier)
+                // Feed the real dial height back to the list's bottom clearance so the last rows
+                // clear the collapsed pill (short) or the expanded panel (tall, taller at large
+                // font scales) exactly, without a hardcoded spacer.
+                .onSizeChanged { size ->
+                    if (size.height > 0) {
+                        val h = with(density) { size.height.toDp() }
+                        if (h != measuredDialHeight) measuredDialHeight = h
+                    }
+                }
         ) {
             FairSlotsScrubber(
                 hours = dialHours,

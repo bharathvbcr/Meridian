@@ -36,8 +36,6 @@ struct WorldClockWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: Self.kind, provider: WorldClockProvider()) { entry in
             WorldClockWidgetView(entry: entry)
-                // Deep-link the whole widget tap into the World screen (Android parity).
-                .widgetURL(URL(string: "meridian://world"))
                 .containerBackground(for: .widget) {
                     WidgetPalette.background
                 }
@@ -80,6 +78,9 @@ struct WorldClockWidgetView: View {
                 zoneList
             }
         }
+        .widgetURL(
+            URL(string: entry.zones.isEmpty ? "meridian://addzone" : "meridian://world")
+        )
     }
 
     // MARK: Header
@@ -102,8 +103,12 @@ struct WorldClockWidgetView: View {
     private var emptyState: some View {
         VStack {
             Spacer(minLength: 0)
-            Text("No pinned locations yet. Open Meridian to add worldwide cities.")
-                .font(.system(size: 12))
+            Text("Tap to search and pin cities.")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(WidgetPalette.primary)
+                .multilineTextAlignment(.center)
+            Text("Opens Meridian's city search.")
+                .font(.system(size: 11))
                 .foregroundStyle(WidgetPalette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)

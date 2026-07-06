@@ -5,6 +5,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,14 +21,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -49,15 +57,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.data.Person
 import com.example.core.data.SavedZone
+import com.example.core.designsystem.LocalReduceMotion
 import com.example.core.designsystem.PlannerCard
 import com.example.core.designsystem.meridianFilterChipColors
 import dev.chrisbanes.haze.HazeState
@@ -150,6 +163,17 @@ internal fun ParticipantsCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = { showAddDialog = true },
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Text("Add participant", style = MaterialTheme.typography.labelLarge)
+            }
             Spacer(Modifier.height(12.dp))
         }
         val youChipColors = FilterChipDefaults.filterChipColors(
@@ -167,6 +191,15 @@ internal fun ParticipantsCard(
                 onClick = {},
                 label = { Text("You · $localLocationName", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = youChipColors,
+                // A disabled+selected FilterChip is announced by TalkBack as merely "disabled",
+                // which reads as broken. Override with a clean, self-describing announcement so
+                // screen-reader users understand You are permanently part of the meeting.
+                modifier = Modifier.clearAndSetSemantics {
+                    contentDescription = "You in $localLocationName"
+                    selected = true
+                    disabled()
+                    stateDescription = "Always included"
+                },
             )
             if (hasFavorites) {
                 locationGroups.forEach { group ->
@@ -238,12 +271,22 @@ internal fun ParticipantsCard(
                     }
                 }
             }
-            FilterChip(
-                selected = false,
+            // An action, not a selection: an AssistChip with a primary tint sets it apart from the
+            // toggleable participant chips it trails, so "Add" never reads as one more participant.
+            AssistChip(
                 onClick = { showAddDialog = true },
                 label = { Text("Add", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 leadingIcon = {
                     Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    labelColor = MaterialTheme.colorScheme.primary,
+                    leadingIconContentColor = MaterialTheme.colorScheme.primary,
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                modifier = Modifier.semantics {
+                    role = Role.Button
+                    contentDescription = "Add participant"
                 },
             )
         }
@@ -269,9 +312,16 @@ internal fun ParticipantsCard(
 }
 
 /**
- * Tap to toggle selection. Hold for ~700 ms to delete — a left-to-right fill sweeps in with
- * escalating haptic ticks to signal progress, ending in a strong LongPress pulse on confirm.
- * Releasing early snaps the fill back with a spring.
+ * Tap to toggle selection. Two delete paths, both discoverable:
+ *  - a visible trailing ✕ button (keyboard / switch / sighted users), mirroring PeopleCard's
+ *    trailing delete IconButton, and
+ *  - a hold-for-~700 ms shortcut on the label — a left-to-right fill sweeps in with escalating
+ *    haptic ticks, ending in a strong LongPress pulse on confirm; releasing early springs back.
+ *
+ * The hold's fill animation and escalating ticks are gated on Reduce Motion: when it is on, the
+ * fill snaps and the tick loop is skipped, per the north-star's "always respect Reduce Motion".
+ * Fills and border weight track [meridianFilterChipColors] so this chip reads as one family with
+ * the Material FilterChips beside it in the same FlowRow.
  */
 @Composable
 private fun PersonChip(
@@ -281,10 +331,14 @@ private fun PersonChip(
     onDelete: () -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
+    val reduceMotion = LocalReduceMotion.current
     val scope = rememberCoroutineScope()
     val progress = remember { Animatable(0f) }
     val chipShape = RoundedCornerShape(50)
 
+    // Match meridianFilterChipColors(): selected fill = primaryContainer on onPrimaryContainer;
+    // unselected = a single hairline outline (Material FilterChip's unselected border), so the
+    // two chip types are indistinguishable at rest.
     val selectedBg = MaterialTheme.colorScheme.primaryContainer
     val selectedLabel = MaterialTheme.colorScheme.onPrimaryContainer
     val unselectedLabel = MaterialTheme.colorScheme.onSurfaceVariant
@@ -295,26 +349,31 @@ private fun PersonChip(
     val p = progress.value
     val baseLabel = if (selected) selectedLabel else unselectedLabel
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val strokeWidthPx = remember(density) { with(density) { 2.dp.toPx() } }
+    val strokeWidthPx = remember(density) { with(density) { 1.dp.toPx() } }
 
-    Box(
+    Row(
         modifier = Modifier
             .clip(chipShape)
-            .semantics {
+            .semantics(mergeDescendants = true) {
                 role = Role.Button
+                // The label Box + delete IconButton below both clearAndSetSemantics, so the merged
+                // node needs the name spelled out here or TalkBack would read an unnamed toggle.
+                contentDescription = label
                 this.selected = selected
+                stateDescription = if (selected) "Included" else "Excluded"
                 customActions = listOf(
                     CustomAccessibilityAction(label = "Remove $label") { onDelete(); true }
                 )
             }
             .drawBehind {
+                val radius = CornerRadius(size.height / 2)
                 if (selected) {
-                    drawRoundRect(color = selectedBg, cornerRadius = CornerRadius(size.height / 2))
+                    drawRoundRect(color = selectedBg, cornerRadius = radius)
                 }
                 if (!selected) {
                     drawRoundRect(
-                        color = lerp(outlineColor.copy(alpha = 0.5f), errorColor, p),
-                        cornerRadius = CornerRadius(size.height / 2),
+                        color = lerp(outlineColor, errorColor, p),
+                        cornerRadius = radius,
                         style = Stroke(width = strokeWidthPx),
                     )
                 }
@@ -322,51 +381,85 @@ private fun PersonChip(
                     drawRoundRect(
                         color = errorColor.copy(alpha = 0.25f + 0.25f * p),
                         size = Size(size.width * p, size.height),
-                        cornerRadius = CornerRadius(size.height / 2),
+                        cornerRadius = radius,
                     )
                 }
             }
-            .pointerInput(label) {
-                detectTapGestures(
-                    onTap = { onToggle() },
-                    onPress = {
-                        val job = scope.launch {
-                            delay(80)
-                            val hapticJob = launch {
-                                var interval = 160L
-                                while (isActive) {
-                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    delay(interval)
-                                    interval = maxOf(30L, interval - 25L)
+            .height(FilterChipDefaults.Height),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .clearAndSetSemantics { }
+                .pointerInput(label, reduceMotion) {
+                    detectTapGestures(
+                        onTap = { onToggle() },
+                        onPress = {
+                            val job = scope.launch {
+                                delay(80)
+                                val hapticJob = if (reduceMotion) null else launch {
+                                    var interval = 160L
+                                    while (isActive) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        delay(interval)
+                                        interval = maxOf(30L, interval - 25L)
+                                    }
+                                }
+                                if (reduceMotion) {
+                                    delay(700)
+                                    progress.snapTo(1f)
+                                } else {
+                                    progress.animateTo(1f, tween(700, easing = LinearEasing))
+                                }
+                                hapticJob?.cancel()
+                                if (progress.value >= 0.99f) {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onDelete()
                                 }
                             }
-                            progress.animateTo(1f, tween(700, easing = LinearEasing))
-                            hapticJob.cancel()
-                            if (progress.value >= 0.99f) {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onDelete()
+                            tryAwaitRelease()
+                            job.cancel()
+                            if (progress.value < 0.99f) {
+                                scope.launch {
+                                    if (reduceMotion) {
+                                        progress.snapTo(0f)
+                                    } else {
+                                        progress.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
+                                    }
+                                }
                             }
-                        }
-                        tryAwaitRelease()
-                        job.cancel()
-                        if (progress.value < 0.99f) {
-                            scope.launch {
-                                progress.animateTo(0f, spring(stiffness = Spring.StiffnessMedium))
-                            }
-                        }
-                    },
-                )
-            }
-            .height(FilterChipDefaults.Height)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.labelLarge,
-            color = lerp(baseLabel, onErrorColor, (p * 2.5f).coerceIn(0f, 1f)),
-        )
+                        },
+                    )
+                }
+                .padding(start = 12.dp, end = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelLarge,
+                color = lerp(baseLabel, onErrorColor, (p * 2.5f).coerceIn(0f, 1f)),
+            )
+        }
+        // Visible remove affordance for keyboard / switch / sighted users who never discover the
+        // hold shortcut. Kept visually at chip height for FlowRow parity while
+        // minimumInteractiveComponentSize expands the hit area to the 48dp a11y minimum. Hidden
+        // from TalkBack (clearAndSetSemantics) so the merged-parent's "Remove $label" custom
+        // action stays the single, canonical delete announcement.
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier
+                .minimumInteractiveComponentSize()
+                .size(FilterChipDefaults.Height)
+                .clearAndSetSemantics { },
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = null,
+                tint = lerp(baseLabel, onErrorColor, (p * 2.5f).coerceIn(0f, 1f)),
+                modifier = Modifier.size(16.dp),
+            )
+        }
     }
 }

@@ -1,6 +1,8 @@
 package com.example.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,8 +30,8 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -43,20 +46,82 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.core.data.SavedZone
-import com.example.core.designsystem.meridianFilterChipColors
+import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.LocalReduceMotion
+import com.example.core.designsystem.MeridianFilterChip
+import com.example.core.designsystem.Motion
 import com.example.core.time.TimeFormats
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
+
+/**
+ * Private dimension tokens local to this file, mirroring the Meridian spacing / sizing scale
+ * (4 / 6 / 8 spacing; 48dp minimum touch target) and glass radius so component internals reference a
+ * named token instead of a bare literal — matching the north-star rule against duplicating a value
+ * that should be a token, without adding to any shared token file.
+ */
+private val SpacingSmall: Dp = 8.dp
+private val SectionLabelGap: Dp = 6.dp
+private val ResultRowVerticalPadding: Dp = 8.dp
+private val ResultRowHorizontalPadding: Dp = 4.dp
+
+/** Android minimum accessible touch target (Material a11y guidance). */
+private val MinTouchTarget: Dp = 48.dp
+
+/** Field / result-panel corner radius on the Meridian "medium" radius step (matches search field). */
+private val FieldRadius: Dp = 16.dp
+
+/** Max height for the scrollable results panel so it never crowds out the surrounding form. */
+private val ResultsMaxHeight: Dp = 165.dp
+
+/** Selected-check glyph size for a result row (slightly larger than the chip leading icon). */
+private val CheckIconSize: Dp = 18.dp
+
+/**
+ * Springy expand/shrink recipe for this file's [AnimatedVisibility] blocks, gated on
+ * [LocalReduceMotion]. Mirrors HomeCityPickerSheet's search motion so the picker's show/hide reads
+ * as the same liquid-glass language as the rest of the app; under reduce-motion it collapses to a
+ * plain fade so the OS "remove animations" preference is honored.
+ */
+private fun springExpand(
+    reduceMotion: Boolean,
+    expandFrom: Alignment.Vertical = Alignment.Top,
+): EnterTransition =
+    if (reduceMotion) {
+        fadeIn()
+    } else {
+        fadeIn(Motion.smooth()) + expandVertically(animationSpec = Motion.smooth(), expandFrom = expandFrom)
+    }
+
+private fun springShrink(
+    reduceMotion: Boolean,
+    shrinkTowards: Alignment.Vertical = Alignment.Top,
+): ExitTransition =
+    if (reduceMotion) {
+        fadeOut()
+    } else {
+        fadeOut(Motion.smooth()) + shrinkVertically(animationSpec = Motion.smooth(), shrinkTowards = shrinkTowards)
+    }
 
 /**
  * Quick-pick chips (local + saved zones) with optional custom zone search.
@@ -76,6 +141,7 @@ fun ZoneSearchPicker(
     alwaysShowSearch: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
+    val reduceMotion = LocalReduceMotion.current
     val zoneSearchFocus = remember { FocusRequester() }
     var zoneQuery by remember { mutableStateOf("") }
     var customMode by remember { mutableStateOf(alwaysShowSearch) }
@@ -114,18 +180,20 @@ fun ZoneSearchPicker(
                 is24Hour = is24Hour,
                 showOffset = true,
                 expandFromBottom = true,
+                reduceMotion = reduceMotion,
                 onPickZone = onPickZone,
             )
             ZoneSearchField(
                 zoneQuery = zoneQuery,
                 onZoneQueryChange = { zoneQuery = it },
                 visible = showSearch,
+                reduceMotion = reduceMotion,
                 focusRequester = zoneSearchFocus,
             )
             AnimatedVisibility(
                 visible = zoneQuery.isBlank(),
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
+                enter = springExpand(reduceMotion),
+                exit = springShrink(reduceMotion)
             ) {
                 QuickZoneChips(
                     quickZones = quickZones,
@@ -167,16 +235,18 @@ fun ZoneSearchPicker(
                 is24Hour = is24Hour,
                 showOffset = false,
                 expandFromBottom = false,
+                reduceMotion = reduceMotion,
                 onPickZone = onPickZone,
                 visible = showSearch,
             )
             if (showSearch) {
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(SpacingSmall))
             }
             ZoneSearchField(
                 zoneQuery = zoneQuery,
                 onZoneQueryChange = { zoneQuery = it },
                 visible = showSearch,
+                reduceMotion = reduceMotion,
                 focusRequester = zoneSearchFocus,
             )
         }
@@ -196,31 +266,33 @@ private fun QuickZoneChips(
     onCustomChipClick: () -> Unit,
     showSectionLabel: Boolean,
 ) {
-    val chipColors = meridianFilterChipColors()
-
     Column {
         if (showSectionLabel) {
+            // A labelMedium section header (12sp SemiBold with wider tracking) reads as a deliberate
+            // group label above the chips; marking it a heading lets TalkBack jump to the group.
             Text(
                 text = "Quick Select",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { heading() }
             )
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(SectionLabelGap))
         }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(SpacingSmall),
+            verticalArrangement = Arrangement.spacedBy(SpacingSmall)
         ) {
             quickZones.forEach { (id, name) ->
-                FilterChip(
+                // Route through MeridianFilterChip for LongPress-haptic + unified selected semantics
+                // parity with every other selectable chip in the app. The leading globe appears only
+                // while selected, carrying a "Selected" description for TalkBack.
+                MeridianFilterChip(
+                    label = name,
                     selected = selectedZoneId == id && !isCustomSelection,
                     onClick = { onQuickZoneSelected(id, name) },
-                    label = { Text(name) },
-                    leadingIcon = if (selectedZoneId == id && !isCustomSelection) {
-                        { Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    } else null,
-                    colors = chipColors
+                    leadingIcon = Icons.Default.Public,
+                    leadingIconContentDescription = "Selected",
                 )
             }
             if (showCustomChip) {
@@ -231,19 +303,21 @@ private fun QuickZoneChips(
                 } else {
                     "Custom"
                 }
-                FilterChip(
+                MeridianFilterChip(
+                    label = customChipLabel,
                     selected = customChipSelected,
                     onClick = onCustomChipClick,
-                    label = { Text(customChipLabel) },
-                    leadingIcon = if (isCustomSelection) {
-                        { Icon(Icons.Default.Public, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                    } else null,
-                    colors = chipColors
+                    leadingIcon = if (isCustomSelection) Icons.Default.Public else null,
+                    leadingIconContentDescription = "Selected",
                 )
             }
         }
     }
 }
+
+/** In-flight vs. settled search outcome, so the panel can show a spinner instead of flashing
+ *  "no matches" during the debounce window. */
+private data class ZoneSearchState(val results: List<SavedZone>, val searching: Boolean)
 
 @Composable
 private fun ZoneSearchResults(
@@ -254,61 +328,102 @@ private fun ZoneSearchResults(
     is24Hour: Boolean,
     showOffset: Boolean,
     expandFromBottom: Boolean,
+    reduceMotion: Boolean,
     onPickZone: (SavedZone) -> Unit,
     visible: Boolean = true,
 ) {
     // Hoisted above AnimatedVisibility so results survive show/hide cycles without flashing
-    // "No matching time zones" on every re-entry.
-    val results by produceState(initialValue = emptyList<SavedZone>(), zoneQuery) {
+    // "No matching time zones" on every re-entry. `searching` stays true through the debounce so the
+    // empty-state copy only appears once a query genuinely returned nothing.
+    val state by produceState(
+        initialValue = ZoneSearchState(emptyList(), searching = false),
+        zoneQuery,
+    ) {
         value = if (zoneQuery.isBlank()) {
-            emptyList()
+            ZoneSearchState(emptyList(), searching = false)
         } else {
+            value = ZoneSearchState(value.results, searching = true)
             delay(120)
-            searchZones(zoneQuery)
+            ZoneSearchState(searchZones(zoneQuery), searching = false)
         }
     }
+    val results = state.results
+    val searching = state.searching
+
+    val expandFrom = if (expandFromBottom) Alignment.Bottom else Alignment.Top
 
     AnimatedVisibility(
         visible = visible && zoneQuery.isNotBlank(),
-        enter = fadeIn() + expandVertically(
-            expandFrom = if (expandFromBottom) Alignment.Bottom else Alignment.Top
-        ),
-        exit = fadeOut() + shrinkVertically(
-            shrinkTowards = if (expandFromBottom) Alignment.Bottom else Alignment.Top
-        )
+        enter = springExpand(reduceMotion, expandFrom = expandFrom),
+        exit = springShrink(reduceMotion, shrinkTowards = expandFrom)
     ) {
-        if (results.isEmpty()) {
-            Text(
-                text = "No matching time zones",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-        } else {
-            val cardColors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-            )
-            Card(
-                colors = cardColors,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 165.dp)
-                    .padding(bottom = 8.dp)
-            ) {
-                LazyColumn(
+        when {
+            searching && results.isEmpty() -> {
+                // Loading affordance so the results area never sits silent/blank during the debounce.
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
+                        .padding(bottom = SpacingSmall)
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = "Searching time zones"
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    items(results, key = { it.id }) { zone ->
-                        ZoneSearchResultRow(
-                            zone = zone,
-                            localZoneId = localZoneId,
-                            selectedZoneId = selectedZoneId,
-                            is24Hour = is24Hour,
-                            showOffset = showOffset,
-                            onSelect = { onPickZone(zone) }
-                        )
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(CheckIconSize),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(SpacingSmall))
+                    Text(
+                        text = "Searching…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            results.isEmpty() -> {
+                Text(
+                    text = "No matching time zones",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .padding(bottom = SpacingSmall)
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = "No time zones match “$zoneQuery”"
+                        }
+                )
+            }
+            else -> {
+                // Match the app's floating result surfaces: the shared glass card radius plus the
+                // canonical unified glass tint (GlassDefaults.cardTint) instead of an ad-hoc
+                // surfaceVariant alpha. This call site has no HazeState to pass to GlassCard, so it
+                // reuses the same shape + tint tokens to stay in the liquid-glass language.
+                Card(
+                    shape = GlassDefaults.cardShape,
+                    colors = CardDefaults.cardColors(containerColor = GlassDefaults.cardTint),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = ResultsMaxHeight)
+                        .padding(bottom = SpacingSmall)
+                ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = SpacingSmall)
+                    ) {
+                        items(results, key = { it.id }) { zone ->
+                            ZoneSearchResultRow(
+                                zone = zone,
+                                localZoneId = localZoneId,
+                                selectedZoneId = selectedZoneId,
+                                is24Hour = is24Hour,
+                                showOffset = showOffset,
+                                onSelect = { onPickZone(zone) }
+                            )
+                        }
                     }
                 }
             }
@@ -321,12 +436,13 @@ private fun ZoneSearchField(
     zoneQuery: String,
     onZoneQueryChange: (String) -> Unit,
     visible: Boolean,
+    reduceMotion: Boolean,
     focusRequester: FocusRequester,
 ) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically()
+        enter = springExpand(reduceMotion),
+        exit = springShrink(reduceMotion)
     ) {
         OutlinedTextField(
             value = zoneQuery,
@@ -339,7 +455,7 @@ private fun ZoneSearchField(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(FieldRadius),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = MaterialTheme.colorScheme.onSurface,
                 unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -379,11 +495,36 @@ private fun ZoneSearchResultRow(
         }
     }
 
+    val isSelected = selectedZoneId == zone.id
+
+    // One merged spoken label per row so TalkBack announces the whole option once ("Tokyo,
+    // Asia/Tokyo, 14:30, +5 hours") plus a "Selected"/"Not selected" state — instead of reading the
+    // name, id, time and check icon as four disconnected nodes with no selected cue.
+    val rowDescription = buildString {
+        append(zone.displayName)
+        append(", ")
+        append(zone.id)
+        append(", ")
+        append(currentLocalTime)
+        if (relativeOffset != null) {
+            append(", ")
+            append(relativeOffset)
+        }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Guarantee the Android 48dp accessible target even for a single-line row.
+            .heightIn(min = MinTouchTarget)
             .clickable(onClick = onSelect)
-            .padding(vertical = 8.dp, horizontal = 4.dp),
+            .padding(vertical = ResultRowVerticalPadding, horizontal = ResultRowHorizontalPadding)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                selected = isSelected
+                contentDescription = rowDescription
+                stateDescription = if (isSelected) "Selected" else "Not selected"
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -400,7 +541,7 @@ private fun ZoneSearchResultRow(
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(SpacingSmall)
         ) {
             if (relativeOffset != null) {
                 Column(horizontalAlignment = Alignment.End) {
@@ -424,12 +565,14 @@ private fun ZoneSearchResultRow(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            if (selectedZoneId == zone.id) {
+            if (isSelected) {
+                // Selected state is carried by the merged row semantics above; the glyph stays
+                // decorative (null description) so TalkBack doesn't double-announce it.
                 Icon(
                     imageVector = Icons.Default.Check,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(CheckIconSize)
                 )
             }
         }

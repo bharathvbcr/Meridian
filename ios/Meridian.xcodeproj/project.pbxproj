@@ -1,0 +1,1419 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		01FB55C55C1F30B1889B9B0F /* ScheduleParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37224D8154B7D38E12FCB3E1 /* ScheduleParser.swift */; };
+		0725B04F238F15E6FE7E5CD7 /* FindOverlapUseCaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2B2E3BD97C1AE7AB19EA73E /* FindOverlapUseCaseTests.swift */; };
+		097D576BFBA54B3EEE70FF84 /* WorldClockWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06E2AFE4BF928BAF17BE195 /* WorldClockWidget.swift */; };
+		0A00A5BFA5D9C3AE14DBE634 /* ScrollableChipRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A877B6104A9E74C0D58E6FF1 /* ScrollableChipRow.swift */; };
+		0BDDC8A5750DE55768C96957 /* BottomAccessory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29889D4AE34675BEBE0F7F00 /* BottomAccessory.swift */; };
+		0CEA94FC406E75AA5A198962 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0050AB05841D8E6E19EF91C0 /* Models.swift */; };
+		0D1BB6C11F8638CA6E86F96D /* LocalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 634F40F9DA8F1D5012123CB3 /* LocalView.swift */; };
+		0E6A88A6A30FAD24EEF3CFAD /* GlobeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7251BE94F92AC462653DD133 /* GlobeView.swift */; };
+		11CC2F74D67F1C8C66F442BA /* ZoneCoordinates.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDE0DB72725D63B73831B803 /* ZoneCoordinates.swift */; };
+		1340C84063C3A56002476AE3 /* GlassComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57B90B01598D158C0C9317AC /* GlassComponents.swift */; };
+		1410EAEC45D360AD78F7D751 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F535BB5BDD500628BC288DEF /* Motion.swift */; };
+		1714A000E9677132BE843452 /* SettingsActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC9D48FEC03D3C6D07BC212 /* SettingsActions.swift */; };
+		1785FCA773D2A64BA3B43CA9 /* SolarDaylightWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86FCF42E3250746C362DADEE /* SolarDaylightWidget.swift */; };
+		1811ECC4B7180FCD334CEDE6 /* FairSlotsScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B6FFF12871070C19DC6224 /* FairSlotsScrubber.swift */; };
+		1A021BB84BFA2B8486214034 /* LegalDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CDFC332924C2B72F3798A13 /* LegalDocument.swift */; };
+		1E36B6626876B39F416A749F /* GlassBottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F24BD9DC3C46C7E7F7C749 /* GlassBottomSheet.swift */; };
+		24DB6B8567C425442379E739 /* SupportCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D1884D1A8F456084B387F9D /* SupportCard.swift */; };
+		2531C3D1FA67F7190A3DAEAB /* DataManagementCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653B4181D66863484EADFF36 /* DataManagementCard.swift */; };
+		272EF9D03985DF714A1EC3D6 /* GeoPlaceRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FDFA9A07881D9EA9B46DF2 /* GeoPlaceRepository.swift */; };
+		27909CE3CAA78860CD64D688 /* WatchWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C0B53366269E044033147F /* WatchWidgetStore.swift */; };
+		28BB10CA3116518710E0DF09 /* MeridianWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B84657423E342D07B272CC1 /* MeridianWatchApp.swift */; };
+		2B560849773D36E70650490F /* AiResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2D332191A57ACFD46D864A1 /* AiResult.swift */; };
+		2D76706B22CEA780E94D4AAA /* ICSGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E730AAF58504E5FF33DA411 /* ICSGenerator.swift */; };
+		2D9DBDD406D3922C8ED28A2E /* AiGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96764EDD29DE083B278A979A /* AiGrounding.swift */; };
+		2EB0123B7110FE237D43A4E1 /* TaskInteropRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9B464591831B3775A281369 /* TaskInteropRepository.swift */; };
+		2EED899430DE44A71766F50C /* WatchWidgetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60C0B53366269E044033147F /* WatchWidgetStore.swift */; };
+		317D0975368D2DD9E3EAD626 /* CountdownFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA513079373A0807332885F6 /* CountdownFormatter.swift */; };
+		33228B5005E5E0DC34649C22 /* RemindersCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE9BA5C279BD76F0CAA7768 /* RemindersCard.swift */; };
+		3466E1C861B273548CFB8B23 /* QuickScheduleCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73BAAFFB157DC1458C705BD /* QuickScheduleCard.swift */; };
+		35321C48BDE0D83B80E07C92 /* WorldCityPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D37B402F215471A93B3B41C9 /* WorldCityPickerSheet.swift */; };
+		3584A51CB19CAFB096B4392B /* WatchlistZoneCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E6559E415C09F6A1DD6B8FD /* WatchlistZoneCard.swift */; };
+		3754E2D7D968672FD1EED647 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF3D5BA4D465EDD892D983BC /* ContentView.swift */; };
+		379B84D15705F2D621DFE979 /* TimeFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7516C804F781134B328A8B /* TimeFormats.swift */; };
+		38BA5A71B5C8ADB3B985FFAA /* EventCountdownAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E01752C8AE37469CBE41D7 /* EventCountdownAttributes.swift */; };
+		3A531A9BE1D103EA0901EDD0 /* MeridianAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5FC90845A21DD65268A179 /* MeridianAppShortcuts.swift */; };
+		3BC6D0E82799B38D7263150F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF9176A02F9C508679FB1435 /* Theme.swift */; };
+		3DCBC1DD067EF75F28E51F7F /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8E2BA44694E4EA94BA8F54 /* LiveActivityManager.swift */; };
+		3E680DD8AB4755E763E87866 /* TimeFormats.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7516C804F781134B328A8B /* TimeFormats.swift */; };
+		3FC29FFAFC9C43B3007B1658 /* AiEngineCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18A3F978EF8CA7C49F0957D1 /* AiEngineCard.swift */; };
+		3FE53CBAEE96880038303D0A /* AiAssistant.swift in Sources */ = {isa = PBXBuildFile; fileRef = A94A384A29F437F088A95591 /* AiAssistant.swift */; };
+		43028004005D53CC15E5B3E1 /* ChatMarkdownText.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99B893C8CCDEA4C7B7DCAF3 /* ChatMarkdownText.swift */; };
+		43D0A1B26C39A199B82C809B /* SharedZoneStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13521C712CC74A182694835B /* SharedZoneStore.swift */; };
+		4A1B6578AB56D9AD374B4886 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0050AB05841D8E6E19EF91C0 /* Models.swift */; };
+		4CD43080C7FB51319DF770C0 /* MeridianWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5515AE4CFA16AF98FA7D2DD0 /* MeridianWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		4E356F63F5C249F140F6FDDE /* CalendarRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85ABE3EC3D930291564A8214 /* CalendarRepository.swift */; };
+		53269BD6422D136ECADD77D5 /* HomeCityPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A69551C7CDC8F73B82E6B1C7 /* HomeCityPickerSheet.swift */; };
+		533BE82C5AB02D2BD1ACFAF9 /* ReminderScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B7591DFEC0AAA11F11BCEF5 /* ReminderScheduler.swift */; };
+		540CE601849D252DD81C8F4B /* SunTimesLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 515ED0C39C165167512C8C49 /* SunTimesLine.swift */; };
+		5692D86670C64D8818166783 /* NowScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A3892BDD46E002B862C9065 /* NowScreen.swift */; };
+		56E27374CA2E1E799EC4C0C0 /* ScrubberGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32C06BF06703F9F3C468442A /* ScrubberGlass.swift */; };
+		59A2DCB3EF73D96B4443698B /* ZoneMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6412067382BABDF5A506E50A /* ZoneMatch.swift */; };
+		5B5B474DA5B2078EFEC22E54 /* ContactGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3653BAD6D507196919679D16 /* ContactGrouping.swift */; };
+		5B65FA2D604BCCA7D4EEACC0 /* FindOverlapUseCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70996AF1F093461417EB3EDE /* FindOverlapUseCase.swift */; };
+		5C73DC634CA3D6E25C00AE74 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AC4123C9F9D47B17FE75BEC /* WatchSessionManager.swift */; };
+		682695BF169628528A6E89B4 /* SharedZoneStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13521C712CC74A182694835B /* SharedZoneStore.swift */; };
+		6D18F74C782DE4EFE2ED465E /* LocalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 634F40F9DA8F1D5012123CB3 /* LocalView.swift */; };
+		6E0499CF89B755646545F1F8 /* SolarMath.swift in Sources */ = {isa = PBXBuildFile; fileRef = 233138496B3698D77E187D4E /* SolarMath.swift */; };
+		6E1F5E65DE740DDC5FED5F66 /* EarthShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = FD539D97CA8FB30487A0B4DD /* EarthShader.metal */; };
+		6F87FFC94AA5A4F8651723D7 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8284BF0D09E3DE044C0A6F /* NotificationService.swift */; };
+		7072E86884025EF68786B447 /* MeridianWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0E93DD8913D9BF5A6348F /* MeridianWidgetBundle.swift */; };
+		77E524909EBF6DA21F7E2ABD /* AnalogClockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B616319BA27161CDB6A194C4 /* AnalogClockView.swift */; };
+		7889B1CEB6066D1CB905F710 /* PlannerComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877BD62F74772C57AD0AB8C7 /* PlannerComponents.swift */; };
+		79526ADDCAC7CB7547E8D1A2 /* WorldAtlas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE99A09074EE45BD507B983 /* WorldAtlas.swift */; };
+		7AF2FD690F7698E12423784A /* DayNightMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BC69F16678C07B897A5EB2C /* DayNightMap.swift */; };
+		815DAFACEB6B01728822637E /* PermissionsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7F611509BED692ED474BF9 /* PermissionsCard.swift */; };
+		8699A65C3ED1C5CB5D0ECCFC /* InteropContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CEA8EF022D61CE612D02919 /* InteropContract.swift */; };
+		86BB6CA52486D325B680CD63 /* SlotCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D66D29C22A01474BB7698E8 /* SlotCard.swift */; };
+		8780260C7ABCE3C9115401C6 /* MeridianWatchWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 938C288D18F8968688DDD3AF /* MeridianWatchWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		884A69EA8844F231825F207D /* TzAbbreviations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D36D24035A12DBAC5CDCC471 /* TzAbbreviations.swift */; };
+		8908E2D35FD6836894DECDEC /* AiTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE3E5DC556CF4A42A24FB0A7 /* AiTelemetry.swift */; };
+		89EA605CBA332EDD41C084AC /* AnchorZonePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E851D25A47DF15742EDB25A /* AnchorZonePickerSheet.swift */; };
+		8DB4C50C956A2471E239A3CE /* MeridianAiTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32EE8B71CA740502B7B30F39 /* MeridianAiTools.swift */; };
+		8DDEEFB40B0CC9EAFAC42B43 /* GlassNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E8643400610B71E67F4902 /* GlassNavBar.swift */; };
+		8DE9FB8413B224F0B85A3758 /* MeridianWatchWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDFBDD9C761F3D31749AF001 /* MeridianWatchWidgetBundle.swift */; };
+		8EC38E34762D21F280576F23 /* TimelineScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55F888841D1A1DB3330D1BF5 /* TimelineScrubber.swift */; };
+		8ECD9096327783B4F718D215 /* DraftConfirmCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A497E3C5DDF67AF7B23639 /* DraftConfirmCard.swift */; };
+		90AAF5E1A864EC0F5E639994 /* AddPersonSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E838CEF13902E37659644D35 /* AddPersonSheet.swift */; };
+		9318AD0CD91E65C5C116C78A /* ContactPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E38C71445806196FCB2932 /* ContactPicker.swift */; };
+		935C09225364ED4B1FC5D59C /* WatchSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 685764511502ADEAC2379C27 /* WatchSyncManager.swift */; };
+		94F03164B554D45DE29BEE8F /* world_map.png in Resources */ = {isa = PBXBuildFile; fileRef = F5DB301CA28709921A5CEB8E /* world_map.png */; };
+		9914DCC421326087EA456731 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1AB0E163841BFC267BC408D /* Assets.xcassets */; };
+		9E5D8154F52E0DFE5E6AB0CA /* PeerVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ACD2D268447243BF74997F8 /* PeerVerifier.swift */; };
+		A02F2D0B1B98693CD0417912 /* InteropExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA46B1509D3EDC199AE6B79 /* InteropExporter.swift */; };
+		A1CE0FDED06D83577849B0D4 /* BackgroundRefreshScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C85422719A3D498336DD107C /* BackgroundRefreshScheduler.swift */; };
+		A5C4C4A3DB8CCED32E268CF5 /* EventCountdownLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD9544EB1EAE0320453C9DCA /* EventCountdownLiveActivity.swift */; };
+		A72C3ABACEA002D64C7FB1B7 /* CelestialBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD0E09FE9EFF4A88FCFFFF0 /* CelestialBackdrop.swift */; };
+		A84537E7016582A6ECDAA06F /* SecondZoneWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B75BD8EF2E304504888C807D /* SecondZoneWidget.swift */; };
+		AB6E04C3BC4303327B40D953 /* ScheduleTimeParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 339F1B1CBBB2AB6D2F723558 /* ScheduleTimeParser.swift */; };
+		ACDE962ABF8C8D554D07A30E /* AiResourcePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91BF35271C8EFF59FCCFB03C /* AiResourcePolicy.swift */; };
+		B1F8D6D8060099D783122273 /* OffsetZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86F0048572DA6F5839063CEF /* OffsetZones.swift */; };
+		B1F9C13BDA14D9E730F26250 /* PlannedTaskRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36202DD9640B50BEC23FF0E6 /* PlannedTaskRow.swift */; };
+		B2B8E96BD222708236428946 /* LiquidGlass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F153113C4B79527B3A66124 /* LiquidGlass.swift */; };
+		B3840B375BA2B002970C3883 /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984F45E44CC2F4255FAB8B4D /* AppEnvironment.swift */; };
+		B522DAB6011EFEA9C44EC24B /* InteropClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07242F8A0F48BDA2B465BFB2 /* InteropClient.swift */; };
+		B56551F8FEDEF2D8C7B2B4C2 /* ContactsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1661BE0F202DF8307E2FA14E /* ContactsRepository.swift */; };
+		B7E6A990ADB88CC37F47C8E5 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE9327202A3BC7B1209B21A /* SharedModels.swift */; };
+		C207AE62648144FB546D5F52 /* RotationPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB862C7AD3ADC489DFE1DAFD /* RotationPlanner.swift */; };
+		C2AAAFC45C2A7FA92932672A /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE53A194567464D9F1F43EB /* OnboardingView.swift */; };
+		C5153C9A42AA942F336DCD67 /* NotificationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1DC994AF0E89FDFC3C28F1C /* NotificationDelegate.swift */; };
+		C688DD982F5D8DA0737DC18D /* MainViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1DC54B08B7F4D591830B3E /* MainViewModel.swift */; };
+		C71A34B33A7FEC3C1C744690 /* SettingsRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABEA9FE379AB9988BBE5D092 /* SettingsRepository.swift */; };
+		D2727636C36AB3ABB0262BF1 /* MeridianApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01548C23FD9EC313F165751B /* MeridianApp.swift */; };
+		D2C118EF3B2336126A036DBD /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE9327202A3BC7B1209B21A /* SharedModels.swift */; };
+		D4B2FC3627E3B0742E06A700 /* TimeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 423D975344FAE14201E1F159 /* TimeEngine.swift */; };
+		D74C45EC5AE786E52E050D63 /* cities.db in Resources */ = {isa = PBXBuildFile; fileRef = 48679B71C81AB23FA655DFF9 /* cities.db */; };
+		D799C18631C87F0FE35E3691 /* WorldClockScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 714FA548930B93C4CF4A2DF3 /* WorldClockScreen.swift */; };
+		D84CFF591461A59490ECA2D7 /* WorldVisualization.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8264047AE8D0347CAACE193 /* WorldVisualization.swift */; };
+		D9B07AE63141F8AEC9CBA0CE /* MeridianLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BBD1CDBA8F60E80A4792126 /* MeridianLogo.swift */; };
+		D9D7704C19F7BCE0BDB54482 /* SunTrackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A11FE90F454588B3EF0AC1 /* SunTrackView.swift */; };
+		DA072EC75EE3BAAAC051337C /* JumpModal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 964A3A015E579EF75059DD6C /* JumpModal.swift */; };
+		DC34A1748238C4520624B83F /* MeridianWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0CB845456AEFF3809F02B8B8 /* MeridianWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DE463D83AB7C48156F5911AE /* PlanScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CCDE7B882C43AE9572AF92D /* PlanScreen.swift */; };
+		DFF03EED0A6702FFBA17375C /* InteropSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 423AB2C09BA1FCC4EE08FF66 /* InteropSyncManager.swift */; };
+		E17F6551A0FA140D95A2B181 /* AiScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3CFD6C1EDA75B001A6FF525 /* AiScreen.swift */; };
+		E2575C78ACCEDB20CE3EBC81 /* ParticipantGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29309D90F6786C36BAE6DC34 /* ParticipantGrouping.swift */; };
+		E699EC5E2F0CC2E0E797F846 /* PlaceIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB62CE71F14AD278A79C426E /* PlaceIndex.swift */; };
+		E7401CE46DC7147E51AE52AC /* AddContactToZoneSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 689BA29E5DBBD678A06D9EBE /* AddContactToZoneSheet.swift */; };
+		E765002695A9FF1967EA731C /* InteropEntities.swift in Sources */ = {isa = PBXBuildFile; fileRef = 090D62CDA753C513B108B89E /* InteropEntities.swift */; };
+		E7F9A822C1C1C4BD2E2A9406 /* PermissionsManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D9CF6814D76F2661856AD1D /* PermissionsManager.swift */; };
+		EA811A9FCEAA418433079DCA /* LocationZoneResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7B46A9EFB9F03AA89C21910 /* LocationZoneResolver.swift */; };
+		EBDACFDD81604FE9BA1012A5 /* LegalNoticeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F08E119552B0606B13071F6 /* LegalNoticeSheet.swift */; };
+		ECC224806F9FBB26F11580A0 /* SharedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAE9327202A3BC7B1209B21A /* SharedModels.swift */; };
+		EF097A989EDE7D12BB97CDF4 /* WorkHourWindows.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF92049F18A6EB0FF0C2F9D3 /* WorkHourWindows.swift */; };
+		F56BA53E6BBA3B091A5FE6C2 /* MeridianDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3B12099EE29DA434E26A8F /* MeridianDeepLink.swift */; };
+		F666EDB920C4A7DC435B24EB /* Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C82659AF10B61A62E19B600C /* Provider.swift */; };
+		F93F98CDCBE802FF230B305F /* SemanticLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56426AC8D5C3768D2B2996C7 /* SemanticLayer.swift */; };
+		F96CDFF7D085569A01C51DD9 /* countries-110m.json in Resources */ = {isa = PBXBuildFile; fileRef = 0FA865D4421E1B27DC7F91AA /* countries-110m.json */; };
+		FBC15F6B364C26BDCE0FA22E /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = F167D7626EF27634FA396675 /* SettingsScreen.swift */; };
+		FC43E3B4E4A56407242E3CAF /* WorldClockControlWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B83D050C239D22AD6134A5 /* WorldClockControlWidget.swift */; };
+		FDC40866B52458CADE6D08B6 /* EventCountdownAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E01752C8AE37469CBE41D7 /* EventCountdownAttributes.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0937B165165470A81DC19AF7 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDC04DD90A5399D60F59D2D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1200B410A945D70E415A2F1A;
+			remoteInfo = MeridianWatchWidget;
+		};
+		1FB73A5A47A341CA41C6ECC8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDC04DD90A5399D60F59D2D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9A8BCE5CEE44D273B1DEAC13;
+			remoteInfo = MeridianWatch;
+		};
+		6F3B3AA9826BA382FCE4A576 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDC04DD90A5399D60F59D2D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 47517368F76D33857433719D;
+			remoteInfo = MeridianWidget;
+		};
+		BE65E5425CE7040103308E55 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EDC04DD90A5399D60F59D2D6 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 505B6928E917F69F8D3EEF3F;
+			remoteInfo = MeridianApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2D96DABD0242696E4C27E848 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				DC34A1748238C4520624B83F /* MeridianWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9044FF66998C20FC75B1C98 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				4CD43080C7FB51319DF770C0 /* MeridianWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F9EA84FF9B8D7F6AB80301DA /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				8780260C7ABCE3C9115401C6 /* MeridianWatchWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0050AB05841D8E6E19EF91C0 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		00FDFA9A07881D9EA9B46DF2 /* GeoPlaceRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeoPlaceRepository.swift; sourceTree = "<group>"; };
+		01548C23FD9EC313F165751B /* MeridianApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianApp.swift; sourceTree = "<group>"; };
+		03E38C71445806196FCB2932 /* ContactPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactPicker.swift; sourceTree = "<group>"; };
+		07242F8A0F48BDA2B465BFB2 /* InteropClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteropClient.swift; sourceTree = "<group>"; };
+		090D62CDA753C513B108B89E /* InteropEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteropEntities.swift; sourceTree = "<group>"; };
+		0CB845456AEFF3809F02B8B8 /* MeridianWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MeridianWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		0D1884D1A8F456084B387F9D /* SupportCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportCard.swift; sourceTree = "<group>"; };
+		0FA865D4421E1B27DC7F91AA /* countries-110m.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "countries-110m.json"; sourceTree = "<group>"; };
+		1011B53C20BFA8C7F3418A05 /* MeridianApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MeridianApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13521C712CC74A182694835B /* SharedZoneStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedZoneStore.swift; sourceTree = "<group>"; };
+		1661BE0F202DF8307E2FA14E /* ContactsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsRepository.swift; sourceTree = "<group>"; };
+		18A3F978EF8CA7C49F0957D1 /* AiEngineCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiEngineCard.swift; sourceTree = "<group>"; };
+		19B83D050C239D22AD6134A5 /* WorldClockControlWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldClockControlWidget.swift; sourceTree = "<group>"; };
+		1AC9D48FEC03D3C6D07BC212 /* SettingsActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsActions.swift; sourceTree = "<group>"; };
+		1BBD1CDBA8F60E80A4792126 /* MeridianLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianLogo.swift; sourceTree = "<group>"; };
+		1CDFC332924C2B72F3798A13 /* LegalDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocument.swift; sourceTree = "<group>"; };
+		1F08E119552B0606B13071F6 /* LegalNoticeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalNoticeSheet.swift; sourceTree = "<group>"; };
+		219D09FBC6122CC96F9B6DD7 /* MeridianWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeridianWidget.entitlements; sourceTree = "<group>"; };
+		233138496B3698D77E187D4E /* SolarMath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarMath.swift; sourceTree = "<group>"; };
+		29309D90F6786C36BAE6DC34 /* ParticipantGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParticipantGrouping.swift; sourceTree = "<group>"; };
+		29889D4AE34675BEBE0F7F00 /* BottomAccessory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomAccessory.swift; sourceTree = "<group>"; };
+		2CCDE7B882C43AE9572AF92D /* PlanScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanScreen.swift; sourceTree = "<group>"; };
+		2CEA8EF022D61CE612D02919 /* InteropContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteropContract.swift; sourceTree = "<group>"; };
+		2D3B12099EE29DA434E26A8F /* MeridianDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianDeepLink.swift; sourceTree = "<group>"; };
+		32C06BF06703F9F3C468442A /* ScrubberGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrubberGlass.swift; sourceTree = "<group>"; };
+		32EE8B71CA740502B7B30F39 /* MeridianAiTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianAiTools.swift; sourceTree = "<group>"; };
+		339F1B1CBBB2AB6D2F723558 /* ScheduleTimeParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleTimeParser.swift; sourceTree = "<group>"; };
+		36202DD9640B50BEC23FF0E6 /* PlannedTaskRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannedTaskRow.swift; sourceTree = "<group>"; };
+		3653BAD6D507196919679D16 /* ContactGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactGrouping.swift; sourceTree = "<group>"; };
+		37224D8154B7D38E12FCB3E1 /* ScheduleParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScheduleParser.swift; sourceTree = "<group>"; };
+		3A3892BDD46E002B862C9065 /* NowScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowScreen.swift; sourceTree = "<group>"; };
+		3B7591DFEC0AAA11F11BCEF5 /* ReminderScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderScheduler.swift; sourceTree = "<group>"; };
+		3B84657423E342D07B272CC1 /* MeridianWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianWatchApp.swift; sourceTree = "<group>"; };
+		3D9CF6814D76F2661856AD1D /* PermissionsManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsManager.swift; sourceTree = "<group>"; };
+		3E6559E415C09F6A1DD6B8FD /* WatchlistZoneCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistZoneCard.swift; sourceTree = "<group>"; };
+		423AB2C09BA1FCC4EE08FF66 /* InteropSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteropSyncManager.swift; sourceTree = "<group>"; };
+		423D975344FAE14201E1F159 /* TimeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeEngine.swift; sourceTree = "<group>"; };
+		48679B71C81AB23FA655DFF9 /* cities.db */ = {isa = PBXFileReference; path = cities.db; sourceTree = "<group>"; };
+		4AC4123C9F9D47B17FE75BEC /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
+		4ACD2D268447243BF74997F8 /* PeerVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerVerifier.swift; sourceTree = "<group>"; };
+		4B5FC90845A21DD65268A179 /* MeridianAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianAppShortcuts.swift; sourceTree = "<group>"; };
+		4D66D29C22A01474BB7698E8 /* SlotCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SlotCard.swift; sourceTree = "<group>"; };
+		4F153113C4B79527B3A66124 /* LiquidGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiquidGlass.swift; sourceTree = "<group>"; };
+		515ED0C39C165167512C8C49 /* SunTimesLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunTimesLine.swift; sourceTree = "<group>"; };
+		5515AE4CFA16AF98FA7D2DD0 /* MeridianWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MeridianWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		55F888841D1A1DB3330D1BF5 /* TimelineScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineScrubber.swift; sourceTree = "<group>"; };
+		56426AC8D5C3768D2B2996C7 /* SemanticLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SemanticLayer.swift; sourceTree = "<group>"; };
+		57B90B01598D158C0C9317AC /* GlassComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassComponents.swift; sourceTree = "<group>"; };
+		5BC69F16678C07B897A5EB2C /* DayNightMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayNightMap.swift; sourceTree = "<group>"; };
+		5BE9BA5C279BD76F0CAA7768 /* RemindersCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemindersCard.swift; sourceTree = "<group>"; };
+		5C8284BF0D09E3DE044C0A6F /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		6019918027E03007589B4CB1 /* MeridianWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeridianWatch.entitlements; sourceTree = "<group>"; };
+		60C0B53366269E044033147F /* WatchWidgetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchWidgetStore.swift; sourceTree = "<group>"; };
+		60D15C15E55FF11C9CBE3982 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		634F40F9DA8F1D5012123CB3 /* LocalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalView.swift; sourceTree = "<group>"; };
+		6412067382BABDF5A506E50A /* ZoneMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneMatch.swift; sourceTree = "<group>"; };
+		653B4181D66863484EADFF36 /* DataManagementCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementCard.swift; sourceTree = "<group>"; };
+		685764511502ADEAC2379C27 /* WatchSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSyncManager.swift; sourceTree = "<group>"; };
+		689BA29E5DBBD678A06D9EBE /* AddContactToZoneSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddContactToZoneSheet.swift; sourceTree = "<group>"; };
+		6A05BBF729B32C9CF1E2B8C3 /* MeridianWatchWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MeridianWatchWidget.entitlements; sourceTree = "<group>"; };
+		6BE99A09074EE45BD507B983 /* WorldAtlas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldAtlas.swift; sourceTree = "<group>"; };
+		70996AF1F093461417EB3EDE /* FindOverlapUseCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindOverlapUseCase.swift; sourceTree = "<group>"; };
+		714FA548930B93C4CF4A2DF3 /* WorldClockScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldClockScreen.swift; sourceTree = "<group>"; };
+		7251BE94F92AC462653DD133 /* GlobeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobeView.swift; sourceTree = "<group>"; };
+		7E851D25A47DF15742EDB25A /* AnchorZonePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnchorZonePickerSheet.swift; sourceTree = "<group>"; };
+		80A497E3C5DDF67AF7B23639 /* DraftConfirmCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftConfirmCard.swift; sourceTree = "<group>"; };
+		83A11FE90F454588B3EF0AC1 /* SunTrackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunTrackView.swift; sourceTree = "<group>"; };
+		85ABE3EC3D930291564A8214 /* CalendarRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarRepository.swift; sourceTree = "<group>"; };
+		86F0048572DA6F5839063CEF /* OffsetZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OffsetZones.swift; sourceTree = "<group>"; };
+		86FCF42E3250746C362DADEE /* SolarDaylightWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarDaylightWidget.swift; sourceTree = "<group>"; };
+		877BD62F74772C57AD0AB8C7 /* PlannerComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlannerComponents.swift; sourceTree = "<group>"; };
+		8BA46B1509D3EDC199AE6B79 /* InteropExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InteropExporter.swift; sourceTree = "<group>"; };
+		8DD0E09FE9EFF4A88FCFFFF0 /* CelestialBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CelestialBackdrop.swift; sourceTree = "<group>"; };
+		91BF35271C8EFF59FCCFB03C /* AiResourcePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiResourcePolicy.swift; sourceTree = "<group>"; };
+		938C288D18F8968688DDD3AF /* MeridianWatchWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MeridianWatchWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		93F783F5E1BF1EB9264B751D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		964A3A015E579EF75059DD6C /* JumpModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JumpModal.swift; sourceTree = "<group>"; };
+		96764EDD29DE083B278A979A /* AiGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiGrounding.swift; sourceTree = "<group>"; };
+		984F45E44CC2F4255FAB8B4D /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		9961C4DD1F7A5F5AA2BA956B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9E730AAF58504E5FF33DA411 /* ICSGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICSGenerator.swift; sourceTree = "<group>"; };
+		9F1DC54B08B7F4D591830B3E /* MainViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewModel.swift; sourceTree = "<group>"; };
+		A03C88D06FDCA5AB98C1DB9B /* MeridianTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MeridianTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1AB0E163841BFC267BC408D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2B6FFF12871070C19DC6224 /* FairSlotsScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FairSlotsScrubber.swift; sourceTree = "<group>"; };
+		A69551C7CDC8F73B82E6B1C7 /* HomeCityPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeCityPickerSheet.swift; sourceTree = "<group>"; };
+		A73BAAFFB157DC1458C705BD /* QuickScheduleCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickScheduleCard.swift; sourceTree = "<group>"; };
+		A877B6104A9E74C0D58E6FF1 /* ScrollableChipRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollableChipRow.swift; sourceTree = "<group>"; };
+		A94A384A29F437F088A95591 /* AiAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiAssistant.swift; sourceTree = "<group>"; };
+		AA7516C804F781134B328A8B /* TimeFormats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeFormats.swift; sourceTree = "<group>"; };
+		AB62CE71F14AD278A79C426E /* PlaceIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceIndex.swift; sourceTree = "<group>"; };
+		ABEA9FE379AB9988BBE5D092 /* SettingsRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsRepository.swift; sourceTree = "<group>"; };
+		AF9176A02F9C508679FB1435 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		B2B2E3BD97C1AE7AB19EA73E /* FindOverlapUseCaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FindOverlapUseCaseTests.swift; sourceTree = "<group>"; };
+		B4F24BD9DC3C46C7E7F7C749 /* GlassBottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassBottomSheet.swift; sourceTree = "<group>"; };
+		B616319BA27161CDB6A194C4 /* AnalogClockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalogClockView.swift; sourceTree = "<group>"; };
+		B75BD8EF2E304504888C807D /* SecondZoneWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecondZoneWidget.swift; sourceTree = "<group>"; };
+		BB6CF7C8496A2F1F03BA1AA0 /* Meridian.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Meridian.entitlements; sourceTree = "<group>"; };
+		BB862C7AD3ADC489DFE1DAFD /* RotationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RotationPlanner.swift; sourceTree = "<group>"; };
+		BDE53A194567464D9F1F43EB /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		BDFBDD9C761F3D31749AF001 /* MeridianWatchWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianWatchWidgetBundle.swift; sourceTree = "<group>"; };
+		BF92049F18A6EB0FF0C2F9D3 /* WorkHourWindows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkHourWindows.swift; sourceTree = "<group>"; };
+		C1A0E93DD8913D9BF5A6348F /* MeridianWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeridianWidgetBundle.swift; sourceTree = "<group>"; };
+		C1DC994AF0E89FDFC3C28F1C /* NotificationDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationDelegate.swift; sourceTree = "<group>"; };
+		C3CFD6C1EDA75B001A6FF525 /* AiScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiScreen.swift; sourceTree = "<group>"; };
+		C51DF9721A49105BA67552EB /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C6E8643400610B71E67F4902 /* GlassNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassNavBar.swift; sourceTree = "<group>"; };
+		C82659AF10B61A62E19B600C /* Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Provider.swift; sourceTree = "<group>"; };
+		C85422719A3D498336DD107C /* BackgroundRefreshScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundRefreshScheduler.swift; sourceTree = "<group>"; };
+		C9B464591831B3775A281369 /* TaskInteropRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TaskInteropRepository.swift; sourceTree = "<group>"; };
+		CAE9327202A3BC7B1209B21A /* SharedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedModels.swift; sourceTree = "<group>"; };
+		CE3E5DC556CF4A42A24FB0A7 /* AiTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiTelemetry.swift; sourceTree = "<group>"; };
+		CF7F611509BED692ED474BF9 /* PermissionsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsCard.swift; sourceTree = "<group>"; };
+		D36D24035A12DBAC5CDCC471 /* TzAbbreviations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TzAbbreviations.swift; sourceTree = "<group>"; };
+		D37B402F215471A93B3B41C9 /* WorldCityPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldCityPickerSheet.swift; sourceTree = "<group>"; };
+		D7B46A9EFB9F03AA89C21910 /* LocationZoneResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationZoneResolver.swift; sourceTree = "<group>"; };
+		DD9544EB1EAE0320453C9DCA /* EventCountdownLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCountdownLiveActivity.swift; sourceTree = "<group>"; };
+		E2D332191A57ACFD46D864A1 /* AiResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AiResult.swift; sourceTree = "<group>"; };
+		E7E01752C8AE37469CBE41D7 /* EventCountdownAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventCountdownAttributes.swift; sourceTree = "<group>"; };
+		E838CEF13902E37659644D35 /* AddPersonSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddPersonSheet.swift; sourceTree = "<group>"; };
+		EDE0DB72725D63B73831B803 /* ZoneCoordinates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneCoordinates.swift; sourceTree = "<group>"; };
+		EF3D5BA4D465EDD892D983BC /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		F06E2AFE4BF928BAF17BE195 /* WorldClockWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldClockWidget.swift; sourceTree = "<group>"; };
+		F167D7626EF27634FA396675 /* SettingsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsScreen.swift; sourceTree = "<group>"; };
+		F535BB5BDD500628BC288DEF /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
+		F5DB301CA28709921A5CEB8E /* world_map.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = world_map.png; sourceTree = "<group>"; };
+		F8264047AE8D0347CAACE193 /* WorldVisualization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorldVisualization.swift; sourceTree = "<group>"; };
+		F99B893C8CCDEA4C7B7DCAF3 /* ChatMarkdownText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMarkdownText.swift; sourceTree = "<group>"; };
+		FA513079373A0807332885F6 /* CountdownFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownFormatter.swift; sourceTree = "<group>"; };
+		FD539D97CA8FB30487A0B4DD /* EarthShader.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = EarthShader.metal; sourceTree = "<group>"; };
+		FD8E2BA44694E4EA94BA8F54 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		23728CE933497DACE7D4A133 /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				C3CFD6C1EDA75B001A6FF525 /* AiScreen.swift */,
+				F99B893C8CCDEA4C7B7DCAF3 /* ChatMarkdownText.swift */,
+				80A497E3C5DDF67AF7B23639 /* DraftConfirmCard.swift */,
+				A73BAAFFB157DC1458C705BD /* QuickScheduleCard.swift */,
+			);
+			path = AI;
+			sourceTree = "<group>";
+		};
+		25133D19E8B0C0664EFC7ACC /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				A94A384A29F437F088A95591 /* AiAssistant.swift */,
+				96764EDD29DE083B278A979A /* AiGrounding.swift */,
+				91BF35271C8EFF59FCCFB03C /* AiResourcePolicy.swift */,
+				CE3E5DC556CF4A42A24FB0A7 /* AiTelemetry.swift */,
+				32EE8B71CA740502B7B30F39 /* MeridianAiTools.swift */,
+				56426AC8D5C3768D2B2996C7 /* SemanticLayer.swift */,
+			);
+			path = AI;
+			sourceTree = "<group>";
+		};
+		32564BBF44857F21ABD6B889 /* MeridianWatchWidget */ = {
+			isa = PBXGroup;
+			children = (
+				9961C4DD1F7A5F5AA2BA956B /* Info.plist */,
+				6A05BBF729B32C9CF1E2B8C3 /* MeridianWatchWidget.entitlements */,
+				BDFBDD9C761F3D31749AF001 /* MeridianWatchWidgetBundle.swift */,
+				B75BD8EF2E304504888C807D /* SecondZoneWidget.swift */,
+			);
+			path = MeridianWatchWidget;
+			sourceTree = "<group>";
+		};
+		3BA01A60DED1899907E35508 /* Interop */ = {
+			isa = PBXGroup;
+			children = (
+				07242F8A0F48BDA2B465BFB2 /* InteropClient.swift */,
+				2CEA8EF022D61CE612D02919 /* InteropContract.swift */,
+				090D62CDA753C513B108B89E /* InteropEntities.swift */,
+				8BA46B1509D3EDC199AE6B79 /* InteropExporter.swift */,
+				423AB2C09BA1FCC4EE08FF66 /* InteropSyncManager.swift */,
+				4ACD2D268447243BF74997F8 /* PeerVerifier.swift */,
+			);
+			path = Interop;
+			sourceTree = "<group>";
+		};
+		437E4D52646EC28E8F14257C /* MeridianTests */ = {
+			isa = PBXGroup;
+			children = (
+				B2B2E3BD97C1AE7AB19EA73E /* FindOverlapUseCaseTests.swift */,
+			);
+			path = MeridianTests;
+			sourceTree = "<group>";
+		};
+		49FEE9385606EE0FB68D6F08 /* MeridianApp */ = {
+			isa = PBXGroup;
+			children = (
+				62FCC8818E2887EF7A0E7064 /* App */,
+				DA192D39003CA5E154AEF6A1 /* Core */,
+				C7266C6D35BA792E723A18C6 /* Data */,
+				56031BEC05BB6E71A091D3DD /* DesignSystem */,
+				BE9D2E2353F08E996FBB2E89 /* Features */,
+				3BA01A60DED1899907E35508 /* Interop */,
+				88FD44C1FCA8A6AFDE5B1298 /* Models */,
+				A2692D66522B55DD1FE188C7 /* Resources */,
+				5F2596CC85945CCCCEACCD4A /* Services */,
+				72E7C802DBBAB2E147786321 /* ViewModels */,
+			);
+			path = MeridianApp;
+			sourceTree = "<group>";
+		};
+		4ED57C097F7259A03B3C1EC4 /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				D7B46A9EFB9F03AA89C21910 /* LocationZoneResolver.swift */,
+			);
+			path = Location;
+			sourceTree = "<group>";
+		};
+		56031BEC05BB6E71A091D3DD /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				29889D4AE34675BEBE0F7F00 /* BottomAccessory.swift */,
+				8DD0E09FE9EFF4A88FCFFFF0 /* CelestialBackdrop.swift */,
+				B4F24BD9DC3C46C7E7F7C749 /* GlassBottomSheet.swift */,
+				57B90B01598D158C0C9317AC /* GlassComponents.swift */,
+				C6E8643400610B71E67F4902 /* GlassNavBar.swift */,
+				A69551C7CDC8F73B82E6B1C7 /* HomeCityPickerSheet.swift */,
+				4F153113C4B79527B3A66124 /* LiquidGlass.swift */,
+				1BBD1CDBA8F60E80A4792126 /* MeridianLogo.swift */,
+				F535BB5BDD500628BC288DEF /* Motion.swift */,
+				A877B6104A9E74C0D58E6FF1 /* ScrollableChipRow.swift */,
+				32C06BF06703F9F3C468442A /* ScrubberGlass.swift */,
+				AF9176A02F9C508679FB1435 /* Theme.swift */,
+				55F888841D1A1DB3330D1BF5 /* TimelineScrubber.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		5F2596CC85945CCCCEACCD4A /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				C85422719A3D498336DD107C /* BackgroundRefreshScheduler.swift */,
+				FD8E2BA44694E4EA94BA8F54 /* LiveActivityManager.swift */,
+				13521C712CC74A182694835B /* SharedZoneStore.swift */,
+				685764511502ADEAC2379C27 /* WatchSyncManager.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		62FCC8818E2887EF7A0E7064 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				984F45E44CC2F4255FAB8B4D /* AppEnvironment.swift */,
+				EF3D5BA4D465EDD892D983BC /* ContentView.swift */,
+				01548C23FD9EC313F165751B /* MeridianApp.swift */,
+				4B5FC90845A21DD65268A179 /* MeridianAppShortcuts.swift */,
+				2D3B12099EE29DA434E26A8F /* MeridianDeepLink.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		63DBE9BD39999A1EAA0A8D71 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				E7E01752C8AE37469CBE41D7 /* EventCountdownAttributes.swift */,
+				CAE9327202A3BC7B1209B21A /* SharedModels.swift */,
+				60C0B53366269E044033147F /* WatchWidgetStore.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		72E7C802DBBAB2E147786321 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				9F1DC54B08B7F4D591830B3E /* MainViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		7803CBE62EB976D9B793229A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				1011B53C20BFA8C7F3418A05 /* MeridianApp.app */,
+				A03C88D06FDCA5AB98C1DB9B /* MeridianTests.xctest */,
+				5515AE4CFA16AF98FA7D2DD0 /* MeridianWatch.app */,
+				938C288D18F8968688DDD3AF /* MeridianWatchWidget.appex */,
+				0CB845456AEFF3809F02B8B8 /* MeridianWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7BF77E544D22E6B62FFFA4A1 /* WorldClock */ = {
+			isa = PBXGroup;
+			children = (
+				5BC69F16678C07B897A5EB2C /* DayNightMap.swift */,
+				FD539D97CA8FB30487A0B4DD /* EarthShader.metal */,
+				7251BE94F92AC462653DD133 /* GlobeView.swift */,
+				515ED0C39C165167512C8C49 /* SunTimesLine.swift */,
+				6BE99A09074EE45BD507B983 /* WorldAtlas.swift */,
+				D37B402F215471A93B3B41C9 /* WorldCityPickerSheet.swift */,
+				714FA548930B93C4CF4A2DF3 /* WorldClockScreen.swift */,
+				F8264047AE8D0347CAACE193 /* WorldVisualization.swift */,
+			);
+			path = WorldClock;
+			sourceTree = "<group>";
+		};
+		825C12CDAD1B1C247B305FF7 /* Notify */ = {
+			isa = PBXGroup;
+			children = (
+				C1DC994AF0E89FDFC3C28F1C /* NotificationDelegate.swift */,
+				5C8284BF0D09E3DE044C0A6F /* NotificationService.swift */,
+			);
+			path = Notify;
+			sourceTree = "<group>";
+		};
+		88FD44C1FCA8A6AFDE5B1298 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				0050AB05841D8E6E19EF91C0 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		8DC698B2E73AEDA4D6CEEE02 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				18A3F978EF8CA7C49F0957D1 /* AiEngineCard.swift */,
+				653B4181D66863484EADFF36 /* DataManagementCard.swift */,
+				1CDFC332924C2B72F3798A13 /* LegalDocument.swift */,
+				1F08E119552B0606B13071F6 /* LegalNoticeSheet.swift */,
+				CF7F611509BED692ED474BF9 /* PermissionsCard.swift */,
+				5BE9BA5C279BD76F0CAA7768 /* RemindersCard.swift */,
+				1AC9D48FEC03D3C6D07BC212 /* SettingsActions.swift */,
+				F167D7626EF27634FA396675 /* SettingsScreen.swift */,
+				0D1884D1A8F456084B387F9D /* SupportCard.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		969A3D3EB4F45A0FA2E7B67D /* MeridianWidget */ = {
+			isa = PBXGroup;
+			children = (
+				DD9544EB1EAE0320453C9DCA /* EventCountdownLiveActivity.swift */,
+				60D15C15E55FF11C9CBE3982 /* Info.plist */,
+				219D09FBC6122CC96F9B6DD7 /* MeridianWidget.entitlements */,
+				C1A0E93DD8913D9BF5A6348F /* MeridianWidgetBundle.swift */,
+				C82659AF10B61A62E19B600C /* Provider.swift */,
+				19B83D050C239D22AD6134A5 /* WorldClockControlWidget.swift */,
+				F06E2AFE4BF928BAF17BE195 /* WorldClockWidget.swift */,
+			);
+			path = MeridianWidget;
+			sourceTree = "<group>";
+		};
+		9B511F9872C9821BC79F9DD3 /* MeridianWatch */ = {
+			isa = PBXGroup;
+			children = (
+				93F783F5E1BF1EB9264B751D /* Info.plist */,
+				6019918027E03007589B4CB1 /* MeridianWatch.entitlements */,
+				3B84657423E342D07B272CC1 /* MeridianWatchApp.swift */,
+				4AC4123C9F9D47B17FE75BEC /* WatchSessionManager.swift */,
+			);
+			path = MeridianWatch;
+			sourceTree = "<group>";
+		};
+		A2692D66522B55DD1FE188C7 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				A1AB0E163841BFC267BC408D /* Assets.xcassets */,
+				48679B71C81AB23FA655DFF9 /* cities.db */,
+				0FA865D4421E1B27DC7F91AA /* countries-110m.json */,
+				C51DF9721A49105BA67552EB /* Info.plist */,
+				BB6CF7C8496A2F1F03BA1AA0 /* Meridian.entitlements */,
+				F5DB301CA28709921A5CEB8E /* world_map.png */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A7545C8897D0F7F65BD6F984 /* Planner */ = {
+			isa = PBXGroup;
+			children = (
+				E838CEF13902E37659644D35 /* AddPersonSheet.swift */,
+				A2B6FFF12871070C19DC6224 /* FairSlotsScrubber.swift */,
+				964A3A015E579EF75059DD6C /* JumpModal.swift */,
+				29309D90F6786C36BAE6DC34 /* ParticipantGrouping.swift */,
+				36202DD9640B50BEC23FF0E6 /* PlannedTaskRow.swift */,
+				877BD62F74772C57AD0AB8C7 /* PlannerComponents.swift */,
+				2CCDE7B882C43AE9572AF92D /* PlanScreen.swift */,
+				4D66D29C22A01474BB7698E8 /* SlotCard.swift */,
+			);
+			path = Planner;
+			sourceTree = "<group>";
+		};
+		BE9D2E2353F08E996FBB2E89 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				23728CE933497DACE7D4A133 /* AI */,
+				DC4F3A8391321FC4FDBC9611 /* Now */,
+				F9D048E1D628E0747083CA05 /* Onboarding */,
+				A7545C8897D0F7F65BD6F984 /* Planner */,
+				8DC698B2E73AEDA4D6CEEE02 /* Settings */,
+				7BF77E544D22E6B62FFFA4A1 /* WorldClock */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		C7266C6D35BA792E723A18C6 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				85ABE3EC3D930291564A8214 /* CalendarRepository.swift */,
+				1661BE0F202DF8307E2FA14E /* ContactsRepository.swift */,
+				3B7591DFEC0AAA11F11BCEF5 /* ReminderScheduler.swift */,
+				ABEA9FE379AB9988BBE5D092 /* SettingsRepository.swift */,
+				C9B464591831B3775A281369 /* TaskInteropRepository.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		DA192D39003CA5E154AEF6A1 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				25133D19E8B0C0664EFC7ACC /* AI */,
+				4ED57C097F7259A03B3C1EC4 /* Location */,
+				825C12CDAD1B1C247B305FF7 /* Notify */,
+				E2D332191A57ACFD46D864A1 /* AiResult.swift */,
+				3653BAD6D507196919679D16 /* ContactGrouping.swift */,
+				FA513079373A0807332885F6 /* CountdownFormatter.swift */,
+				70996AF1F093461417EB3EDE /* FindOverlapUseCase.swift */,
+				00FDFA9A07881D9EA9B46DF2 /* GeoPlaceRepository.swift */,
+				9E730AAF58504E5FF33DA411 /* ICSGenerator.swift */,
+				634F40F9DA8F1D5012123CB3 /* LocalView.swift */,
+				86F0048572DA6F5839063CEF /* OffsetZones.swift */,
+				3D9CF6814D76F2661856AD1D /* PermissionsManager.swift */,
+				AB62CE71F14AD278A79C426E /* PlaceIndex.swift */,
+				BB862C7AD3ADC489DFE1DAFD /* RotationPlanner.swift */,
+				37224D8154B7D38E12FCB3E1 /* ScheduleParser.swift */,
+				339F1B1CBBB2AB6D2F723558 /* ScheduleTimeParser.swift */,
+				233138496B3698D77E187D4E /* SolarMath.swift */,
+				423D975344FAE14201E1F159 /* TimeEngine.swift */,
+				AA7516C804F781134B328A8B /* TimeFormats.swift */,
+				D36D24035A12DBAC5CDCC471 /* TzAbbreviations.swift */,
+				BF92049F18A6EB0FF0C2F9D3 /* WorkHourWindows.swift */,
+				EDE0DB72725D63B73831B803 /* ZoneCoordinates.swift */,
+				6412067382BABDF5A506E50A /* ZoneMatch.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		DC4F3A8391321FC4FDBC9611 /* Now */ = {
+			isa = PBXGroup;
+			children = (
+				689BA29E5DBBD678A06D9EBE /* AddContactToZoneSheet.swift */,
+				B616319BA27161CDB6A194C4 /* AnalogClockView.swift */,
+				7E851D25A47DF15742EDB25A /* AnchorZonePickerSheet.swift */,
+				03E38C71445806196FCB2932 /* ContactPicker.swift */,
+				3A3892BDD46E002B862C9065 /* NowScreen.swift */,
+				86FCF42E3250746C362DADEE /* SolarDaylightWidget.swift */,
+				83A11FE90F454588B3EF0AC1 /* SunTrackView.swift */,
+				3E6559E415C09F6A1DD6B8FD /* WatchlistZoneCard.swift */,
+			);
+			path = Now;
+			sourceTree = "<group>";
+		};
+		F9D048E1D628E0747083CA05 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				BDE53A194567464D9F1F43EB /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		FEBFECAEA643DE58B0A3FDBC = {
+			isa = PBXGroup;
+			children = (
+				49FEE9385606EE0FB68D6F08 /* MeridianApp */,
+				437E4D52646EC28E8F14257C /* MeridianTests */,
+				9B511F9872C9821BC79F9DD3 /* MeridianWatch */,
+				32564BBF44857F21ABD6B889 /* MeridianWatchWidget */,
+				969A3D3EB4F45A0FA2E7B67D /* MeridianWidget */,
+				63DBE9BD39999A1EAA0A8D71 /* Shared */,
+				7803CBE62EB976D9B793229A /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1200B410A945D70E415A2F1A /* MeridianWatchWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5D2F27099585F43367E49F1 /* Build configuration list for PBXNativeTarget "MeridianWatchWidget" */;
+			buildPhases = (
+				AA5368AA4DD5F2238535582F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MeridianWatchWidget;
+			packageProductDependencies = (
+			);
+			productName = MeridianWatchWidget;
+			productReference = 938C288D18F8968688DDD3AF /* MeridianWatchWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		47517368F76D33857433719D /* MeridianWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 10F8F8F2AB32E2F37D900109 /* Build configuration list for PBXNativeTarget "MeridianWidget" */;
+			buildPhases = (
+				A5D8CE60741258CDE308672A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MeridianWidget;
+			packageProductDependencies = (
+			);
+			productName = MeridianWidget;
+			productReference = 0CB845456AEFF3809F02B8B8 /* MeridianWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		505B6928E917F69F8D3EEF3F /* MeridianApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F51ECCD3722CA03628385996 /* Build configuration list for PBXNativeTarget "MeridianApp" */;
+			buildPhases = (
+				244C5E263D69D92EB9775AA9 /* Sources */,
+				8A9C56B2A51A7186AD79917A /* Resources */,
+				2D96DABD0242696E4C27E848 /* Embed Foundation Extensions */,
+				B9044FF66998C20FC75B1C98 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				93FCD25F87EF0E512D1F6207 /* PBXTargetDependency */,
+				E005DE969302B7C0371E18BC /* PBXTargetDependency */,
+			);
+			name = MeridianApp;
+			packageProductDependencies = (
+			);
+			productName = MeridianApp;
+			productReference = 1011B53C20BFA8C7F3418A05 /* MeridianApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9A8BCE5CEE44D273B1DEAC13 /* MeridianWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA43CECB1B5EFAB63142E110 /* Build configuration list for PBXNativeTarget "MeridianWatch" */;
+			buildPhases = (
+				377A91FE3D6A811002225DA7 /* Sources */,
+				F9EA84FF9B8D7F6AB80301DA /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3754EE31031AB54E025FBFAF /* PBXTargetDependency */,
+			);
+			name = MeridianWatch;
+			packageProductDependencies = (
+			);
+			productName = MeridianWatch;
+			productReference = 5515AE4CFA16AF98FA7D2DD0 /* MeridianWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
+		AB728FCE7E8F80133D3D2512 /* MeridianTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1FF5836D034340BB17FB0FF7 /* Build configuration list for PBXNativeTarget "MeridianTests" */;
+			buildPhases = (
+				224270E65BEB3F3A63577516 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8F83884A289377CDD05E5BAE /* PBXTargetDependency */,
+			);
+			name = MeridianTests;
+			packageProductDependencies = (
+			);
+			productName = MeridianTests;
+			productReference = A03C88D06FDCA5AB98C1DB9B /* MeridianTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EDC04DD90A5399D60F59D2D6 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1200B410A945D70E415A2F1A = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					47517368F76D33857433719D = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					505B6928E917F69F8D3EEF3F = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					9A8BCE5CEE44D273B1DEAC13 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					AB728FCE7E8F80133D3D2512 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 63DB0E1EF39921BE6B3BDE53 /* Build configuration list for PBXProject "Meridian" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = FEBFECAEA643DE58B0A3FDBC;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 7803CBE62EB976D9B793229A /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				505B6928E917F69F8D3EEF3F /* MeridianApp */,
+				AB728FCE7E8F80133D3D2512 /* MeridianTests */,
+				9A8BCE5CEE44D273B1DEAC13 /* MeridianWatch */,
+				1200B410A945D70E415A2F1A /* MeridianWatchWidget */,
+				47517368F76D33857433719D /* MeridianWidget */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8A9C56B2A51A7186AD79917A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9914DCC421326087EA456731 /* Assets.xcassets in Resources */,
+				D74C45EC5AE786E52E050D63 /* cities.db in Resources */,
+				F96CDFF7D085569A01C51DD9 /* countries-110m.json in Resources */,
+				94F03164B554D45DE29BEE8F /* world_map.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		224270E65BEB3F3A63577516 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0725B04F238F15E6FE7E5CD7 /* FindOverlapUseCaseTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		244C5E263D69D92EB9775AA9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E7401CE46DC7147E51AE52AC /* AddContactToZoneSheet.swift in Sources */,
+				90AAF5E1A864EC0F5E639994 /* AddPersonSheet.swift in Sources */,
+				3FE53CBAEE96880038303D0A /* AiAssistant.swift in Sources */,
+				3FC29FFAFC9C43B3007B1658 /* AiEngineCard.swift in Sources */,
+				2D9DBDD406D3922C8ED28A2E /* AiGrounding.swift in Sources */,
+				ACDE962ABF8C8D554D07A30E /* AiResourcePolicy.swift in Sources */,
+				2B560849773D36E70650490F /* AiResult.swift in Sources */,
+				E17F6551A0FA140D95A2B181 /* AiScreen.swift in Sources */,
+				8908E2D35FD6836894DECDEC /* AiTelemetry.swift in Sources */,
+				77E524909EBF6DA21F7E2ABD /* AnalogClockView.swift in Sources */,
+				89EA605CBA332EDD41C084AC /* AnchorZonePickerSheet.swift in Sources */,
+				B3840B375BA2B002970C3883 /* AppEnvironment.swift in Sources */,
+				A1CE0FDED06D83577849B0D4 /* BackgroundRefreshScheduler.swift in Sources */,
+				0BDDC8A5750DE55768C96957 /* BottomAccessory.swift in Sources */,
+				4E356F63F5C249F140F6FDDE /* CalendarRepository.swift in Sources */,
+				A72C3ABACEA002D64C7FB1B7 /* CelestialBackdrop.swift in Sources */,
+				43028004005D53CC15E5B3E1 /* ChatMarkdownText.swift in Sources */,
+				5B5B474DA5B2078EFEC22E54 /* ContactGrouping.swift in Sources */,
+				9318AD0CD91E65C5C116C78A /* ContactPicker.swift in Sources */,
+				B56551F8FEDEF2D8C7B2B4C2 /* ContactsRepository.swift in Sources */,
+				3754E2D7D968672FD1EED647 /* ContentView.swift in Sources */,
+				317D0975368D2DD9E3EAD626 /* CountdownFormatter.swift in Sources */,
+				2531C3D1FA67F7190A3DAEAB /* DataManagementCard.swift in Sources */,
+				7AF2FD690F7698E12423784A /* DayNightMap.swift in Sources */,
+				8ECD9096327783B4F718D215 /* DraftConfirmCard.swift in Sources */,
+				6E1F5E65DE740DDC5FED5F66 /* EarthShader.metal in Sources */,
+				FDC40866B52458CADE6D08B6 /* EventCountdownAttributes.swift in Sources */,
+				1811ECC4B7180FCD334CEDE6 /* FairSlotsScrubber.swift in Sources */,
+				5B65FA2D604BCCA7D4EEACC0 /* FindOverlapUseCase.swift in Sources */,
+				272EF9D03985DF714A1EC3D6 /* GeoPlaceRepository.swift in Sources */,
+				1E36B6626876B39F416A749F /* GlassBottomSheet.swift in Sources */,
+				1340C84063C3A56002476AE3 /* GlassComponents.swift in Sources */,
+				8DDEEFB40B0CC9EAFAC42B43 /* GlassNavBar.swift in Sources */,
+				0E6A88A6A30FAD24EEF3CFAD /* GlobeView.swift in Sources */,
+				53269BD6422D136ECADD77D5 /* HomeCityPickerSheet.swift in Sources */,
+				2D76706B22CEA780E94D4AAA /* ICSGenerator.swift in Sources */,
+				B522DAB6011EFEA9C44EC24B /* InteropClient.swift in Sources */,
+				8699A65C3ED1C5CB5D0ECCFC /* InteropContract.swift in Sources */,
+				E765002695A9FF1967EA731C /* InteropEntities.swift in Sources */,
+				A02F2D0B1B98693CD0417912 /* InteropExporter.swift in Sources */,
+				DFF03EED0A6702FFBA17375C /* InteropSyncManager.swift in Sources */,
+				DA072EC75EE3BAAAC051337C /* JumpModal.swift in Sources */,
+				1A021BB84BFA2B8486214034 /* LegalDocument.swift in Sources */,
+				EBDACFDD81604FE9BA1012A5 /* LegalNoticeSheet.swift in Sources */,
+				B2B8E96BD222708236428946 /* LiquidGlass.swift in Sources */,
+				3DCBC1DD067EF75F28E51F7F /* LiveActivityManager.swift in Sources */,
+				6D18F74C782DE4EFE2ED465E /* LocalView.swift in Sources */,
+				EA811A9FCEAA418433079DCA /* LocationZoneResolver.swift in Sources */,
+				C688DD982F5D8DA0737DC18D /* MainViewModel.swift in Sources */,
+				8DB4C50C956A2471E239A3CE /* MeridianAiTools.swift in Sources */,
+				D2727636C36AB3ABB0262BF1 /* MeridianApp.swift in Sources */,
+				3A531A9BE1D103EA0901EDD0 /* MeridianAppShortcuts.swift in Sources */,
+				F56BA53E6BBA3B091A5FE6C2 /* MeridianDeepLink.swift in Sources */,
+				D9B07AE63141F8AEC9CBA0CE /* MeridianLogo.swift in Sources */,
+				4A1B6578AB56D9AD374B4886 /* Models.swift in Sources */,
+				1410EAEC45D360AD78F7D751 /* Motion.swift in Sources */,
+				C5153C9A42AA942F336DCD67 /* NotificationDelegate.swift in Sources */,
+				6F87FFC94AA5A4F8651723D7 /* NotificationService.swift in Sources */,
+				5692D86670C64D8818166783 /* NowScreen.swift in Sources */,
+				B1F8D6D8060099D783122273 /* OffsetZones.swift in Sources */,
+				C2AAAFC45C2A7FA92932672A /* OnboardingView.swift in Sources */,
+				E2575C78ACCEDB20CE3EBC81 /* ParticipantGrouping.swift in Sources */,
+				9E5D8154F52E0DFE5E6AB0CA /* PeerVerifier.swift in Sources */,
+				815DAFACEB6B01728822637E /* PermissionsCard.swift in Sources */,
+				E7F9A822C1C1C4BD2E2A9406 /* PermissionsManager.swift in Sources */,
+				E699EC5E2F0CC2E0E797F846 /* PlaceIndex.swift in Sources */,
+				DE463D83AB7C48156F5911AE /* PlanScreen.swift in Sources */,
+				B1F9C13BDA14D9E730F26250 /* PlannedTaskRow.swift in Sources */,
+				7889B1CEB6066D1CB905F710 /* PlannerComponents.swift in Sources */,
+				3466E1C861B273548CFB8B23 /* QuickScheduleCard.swift in Sources */,
+				533BE82C5AB02D2BD1ACFAF9 /* ReminderScheduler.swift in Sources */,
+				33228B5005E5E0DC34649C22 /* RemindersCard.swift in Sources */,
+				C207AE62648144FB546D5F52 /* RotationPlanner.swift in Sources */,
+				01FB55C55C1F30B1889B9B0F /* ScheduleParser.swift in Sources */,
+				AB6E04C3BC4303327B40D953 /* ScheduleTimeParser.swift in Sources */,
+				0A00A5BFA5D9C3AE14DBE634 /* ScrollableChipRow.swift in Sources */,
+				56E27374CA2E1E799EC4C0C0 /* ScrubberGlass.swift in Sources */,
+				F93F98CDCBE802FF230B305F /* SemanticLayer.swift in Sources */,
+				1714A000E9677132BE843452 /* SettingsActions.swift in Sources */,
+				C71A34B33A7FEC3C1C744690 /* SettingsRepository.swift in Sources */,
+				FBC15F6B364C26BDCE0FA22E /* SettingsScreen.swift in Sources */,
+				ECC224806F9FBB26F11580A0 /* SharedModels.swift in Sources */,
+				682695BF169628528A6E89B4 /* SharedZoneStore.swift in Sources */,
+				86BB6CA52486D325B680CD63 /* SlotCard.swift in Sources */,
+				1785FCA773D2A64BA3B43CA9 /* SolarDaylightWidget.swift in Sources */,
+				6E0499CF89B755646545F1F8 /* SolarMath.swift in Sources */,
+				540CE601849D252DD81C8F4B /* SunTimesLine.swift in Sources */,
+				D9D7704C19F7BCE0BDB54482 /* SunTrackView.swift in Sources */,
+				24DB6B8567C425442379E739 /* SupportCard.swift in Sources */,
+				2EB0123B7110FE237D43A4E1 /* TaskInteropRepository.swift in Sources */,
+				3BC6D0E82799B38D7263150F /* Theme.swift in Sources */,
+				D4B2FC3627E3B0742E06A700 /* TimeEngine.swift in Sources */,
+				379B84D15705F2D621DFE979 /* TimeFormats.swift in Sources */,
+				8EC38E34762D21F280576F23 /* TimelineScrubber.swift in Sources */,
+				884A69EA8844F231825F207D /* TzAbbreviations.swift in Sources */,
+				935C09225364ED4B1FC5D59C /* WatchSyncManager.swift in Sources */,
+				3584A51CB19CAFB096B4392B /* WatchlistZoneCard.swift in Sources */,
+				EF097A989EDE7D12BB97CDF4 /* WorkHourWindows.swift in Sources */,
+				79526ADDCAC7CB7547E8D1A2 /* WorldAtlas.swift in Sources */,
+				35321C48BDE0D83B80E07C92 /* WorldCityPickerSheet.swift in Sources */,
+				D799C18631C87F0FE35E3691 /* WorldClockScreen.swift in Sources */,
+				D84CFF591461A59490ECA2D7 /* WorldVisualization.swift in Sources */,
+				11CC2F74D67F1C8C66F442BA /* ZoneCoordinates.swift in Sources */,
+				59A2DCB3EF73D96B4443698B /* ZoneMatch.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		377A91FE3D6A811002225DA7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				28BB10CA3116518710E0DF09 /* MeridianWatchApp.swift in Sources */,
+				D2C118EF3B2336126A036DBD /* SharedModels.swift in Sources */,
+				5C73DC634CA3D6E25C00AE74 /* WatchSessionManager.swift in Sources */,
+				27909CE3CAA78860CD64D688 /* WatchWidgetStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A5D8CE60741258CDE308672A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				38BA5A71B5C8ADB3B985FFAA /* EventCountdownAttributes.swift in Sources */,
+				A5C4C4A3DB8CCED32E268CF5 /* EventCountdownLiveActivity.swift in Sources */,
+				0D1BB6C11F8638CA6E86F96D /* LocalView.swift in Sources */,
+				7072E86884025EF68786B447 /* MeridianWidgetBundle.swift in Sources */,
+				0CEA94FC406E75AA5A198962 /* Models.swift in Sources */,
+				F666EDB920C4A7DC435B24EB /* Provider.swift in Sources */,
+				43D0A1B26C39A199B82C809B /* SharedZoneStore.swift in Sources */,
+				3E680DD8AB4755E763E87866 /* TimeFormats.swift in Sources */,
+				FC43E3B4E4A56407242E3CAF /* WorldClockControlWidget.swift in Sources */,
+				097D576BFBA54B3EEE70FF84 /* WorldClockWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA5368AA4DD5F2238535582F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8DE9FB8413B224F0B85A3758 /* MeridianWatchWidgetBundle.swift in Sources */,
+				A84537E7016582A6ECDAA06F /* SecondZoneWidget.swift in Sources */,
+				B7E6A990ADB88CC37F47C8E5 /* SharedModels.swift in Sources */,
+				2EED899430DE44A71766F50C /* WatchWidgetStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		3754EE31031AB54E025FBFAF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1200B410A945D70E415A2F1A /* MeridianWatchWidget */;
+			targetProxy = 0937B165165470A81DC19AF7 /* PBXContainerItemProxy */;
+		};
+		8F83884A289377CDD05E5BAE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 505B6928E917F69F8D3EEF3F /* MeridianApp */;
+			targetProxy = BE65E5425CE7040103308E55 /* PBXContainerItemProxy */;
+		};
+		93FCD25F87EF0E512D1F6207 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 47517368F76D33857433719D /* MeridianWidget */;
+			targetProxy = 6F3B3AA9826BA382FCE4A576 /* PBXContainerItemProxy */;
+		};
+		E005DE969302B7C0371E18BC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9A8BCE5CEE44D273B1DEAC13 /* MeridianWatch */;
+			targetProxy = 1FB73A5A47A341CA41C6ECC8 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1D7C56CE50702AFDF407CF62 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Meridian.app/Meridian";
+			};
+			name = Debug;
+		};
+		313E28B5901430C4D1B80FE5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MeridianApp/Resources/Meridian.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MeridianApp/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian;
+				PRODUCT_NAME = Meridian;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4EF46C0B3D29F328C45007A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = "";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				MERIDIAN_APP_ATTEST_ENV = production;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		819C0BED3AE4B8A7D5D7301D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				MERIDIAN_APP_ATTEST_ENV = development;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		84187559C0E3FAB3AC40C554 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MeridianWidget/MeridianWidget.entitlements;
+				INFOPLIST_FILE = MeridianWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.widget;
+				PRODUCT_NAME = MeridianWidget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		97593FF510BCE382C9E34BC9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Meridian.app/Meridian";
+			};
+			name = Release;
+		};
+		98C3276A042D9F1F08925CC2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MeridianApp/Resources/Meridian.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MeridianApp/Resources/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_LDFLAGS = "-lsqlite3";
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian;
+				PRODUCT_NAME = Meridian;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9DD6453A29C4FD4C4AFCAFB1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MeridianWatch/MeridianWatch.entitlements;
+				INFOPLIST_FILE = MeridianWatch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.watchkitapp;
+				PRODUCT_NAME = MeridianWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		A1D399F69E8B9382023E118C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MeridianWatchWidget/MeridianWatchWidget.entitlements;
+				INFOPLIST_FILE = MeridianWatchWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.watchkitapp.widget;
+				PRODUCT_NAME = MeridianWatchWidget;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		C19384F7DDCE46CF44E99A51 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = MeridianWatch/MeridianWatch.entitlements;
+				INFOPLIST_FILE = MeridianWatch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.watchkitapp;
+				PRODUCT_NAME = MeridianWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		CDF5B63D2498F9C18BA1A4A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MeridianWatchWidget/MeridianWatchWidget.entitlements;
+				INFOPLIST_FILE = MeridianWatchWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.watchkitapp.widget;
+				PRODUCT_NAME = MeridianWatchWidget;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		CFFF981BC36FB984274CC172 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MeridianWidget/MeridianWidget.entitlements;
+				INFOPLIST_FILE = MeridianWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.meridian.widget;
+				PRODUCT_NAME = MeridianWidget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		10F8F8F2AB32E2F37D900109 /* Build configuration list for PBXNativeTarget "MeridianWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CFFF981BC36FB984274CC172 /* Debug */,
+				84187559C0E3FAB3AC40C554 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1FF5836D034340BB17FB0FF7 /* Build configuration list for PBXNativeTarget "MeridianTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1D7C56CE50702AFDF407CF62 /* Debug */,
+				97593FF510BCE382C9E34BC9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		63DB0E1EF39921BE6B3BDE53 /* Build configuration list for PBXProject "Meridian" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				819C0BED3AE4B8A7D5D7301D /* Debug */,
+				4EF46C0B3D29F328C45007A5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B5D2F27099585F43367E49F1 /* Build configuration list for PBXNativeTarget "MeridianWatchWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CDF5B63D2498F9C18BA1A4A0 /* Debug */,
+				A1D399F69E8B9382023E118C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F51ECCD3722CA03628385996 /* Build configuration list for PBXNativeTarget "MeridianApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				313E28B5901430C4D1B80FE5 /* Debug */,
+				98C3276A042D9F1F08925CC2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FA43CECB1B5EFAB63142E110 /* Build configuration list for PBXNativeTarget "MeridianWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9DD6453A29C4FD4C4AFCAFB1 /* Debug */,
+				C19384F7DDCE46CF44E99A51 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EDC04DD90A5399D60F59D2D6 /* Project object */;
+}

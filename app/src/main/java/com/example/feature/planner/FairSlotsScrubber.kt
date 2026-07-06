@@ -2,6 +2,7 @@ package com.example.feature.planner
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -39,13 +40,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.LocalReduceMotion
 import com.example.core.designsystem.Motion
 import com.example.core.designsystem.LocalGlassOpacity
 import com.example.core.designsystem.ScrubberGlass
@@ -89,6 +102,10 @@ internal fun FairSlotsScrubber(
 ) {
     if (hours.isEmpty()) return
     val haptic = LocalHapticFeedback.current
+    // Honor the OS "remove animations" preference: the pill press-scale and expand/collapse morph
+    // collapse to instant, while the essential haptics + selection stay (north-star: respect
+    // Reduce Motion / animator scale). Mirrors the World-page TimelineScrubber.
+    val reduceMotion = LocalReduceMotion.current
 
     val optimalColor = MaterialTheme.colorScheme.primary
     val fairColor = MaterialTheme.colorScheme.tertiary
@@ -143,9 +160,11 @@ internal fun FairSlotsScrubber(
         }
     }
 
+    // Press-scale for the collapsed pill so it feels physical when held. Purely decorative, so
+    // reduce-motion pins it to 1f (no scale) and routes through a no-overshoot spring.
     val pillScale by animateFloatAsState(
-        targetValue = if (dialPressed) 0.94f else 1f,
-        animationSpec = Motion.bouncy(),
+        targetValue = if (dialPressed && !reduceMotion) 0.94f else 1f,
+        animationSpec = if (reduceMotion) Motion.quick() else Motion.bouncy(),
         label = "fairPillScale"
     )
 
@@ -154,11 +173,15 @@ internal fun FairSlotsScrubber(
     // Hoist textMeasurer, labelStyle, and pre-measured tick layouts to composable scope so the
     // Canvas draw lambda never calls TextMeasurer.measure() at 60-120 fps during drag.
     val textMeasurer = rememberTextMeasurer()
-    val labelStyle = remember(onSurfaceColor) {
-        TextStyle(
+    // Tick captions follow the documented type scale (labelSmall) so they honor Dynamic Type
+    // instead of a hand-set sp literal; only the tint, weight, and centering are overridden for
+    // the Canvas. Mirrors the World-page TimelineScrubber tick style.
+    val labelBaseStyle = MaterialTheme.typography.labelSmall
+    val labelStyle: TextStyle = remember(onSurfaceColor, labelBaseStyle) {
+        labelBaseStyle.copy(
             color = onSurfaceColor.copy(alpha = 0.85f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
         )
     }
     val tickLayouts = remember(tickLabels, labelStyle) {
@@ -186,6 +209,38 @@ internal fun FairSlotsScrubber(
         if (next != selectedIndex) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             onSelect(next)
+        }
+    }
+
+    // TalkBack navigation: step to the next / previous *selectable* hour (skipping filtered-out
+    // bands), so the seekbar's swipe-up / swipe-down and the explicit actions land only on hours
+    // a user can actually pick — matching the drag gesture's snap-to-selectable behavior.
+    fun step(direction: Int) {
+        var i = selectedIndex + direction
+        while (i in hours.indices) {
+            if (hours[i].slot != null) {
+                selectAt(i)
+                return
+            }
+            i += direction
+        }
+    }
+
+    // Count of pickable hours + the selected hour's ordinal among them, so the spoken position
+    // ("3 of 9 workable hours") is meaningful even when weekends/filters mute part of the day.
+    val selectableCount = remember(hours) { hours.count { it.slot != null } }
+    val selectableOrdinal = remember(hours, selectedIndex) {
+        hours.take(selectedIndex + 1).count { it.slot != null }
+    }
+    // Spoken state, e.g. "9:00 to 9:45, Fair, 3 of 9 workable hours" — unambiguous where the
+    // terse pill glyph is not (mirrors the World-page dial's offsetSpokenLabel).
+    val selectedSpokenLabel = buildString {
+        append(pillTime.replace("–", "to").replace("-", "to"))
+        selected.ratingLabel?.let { append(", $it") }
+        if (selectableCount > 0 && selected.slot != null) {
+            append(", $selectableOrdinal of $selectableCount workable hours")
+        } else if (selected.slot == null) {
+            append(", no overlap this hour")
         }
     }
 
@@ -217,13 +272,59 @@ internal fun FairSlotsScrubber(
                         }
                     },
                 )
+            }
+            // The dial is a drag-only control, invisible to TalkBack on its own. Expose it as an
+            // adjustable seekbar so a screen-reader user can read the selected hour + rating and
+            // nudge the handle via swipe-up/down (setProgress) or the explicit next/previous
+            // actions — none possible with the raw pointer gesture. Mirrors the World-page dial.
+            // clearAndSetSemantics collapses the pill/dial's decorative text (icon label, badge,
+            // Canvas ticks) into this single curated node so TalkBack speaks one coherent control.
+            .clearAndSetSemantics {
+                // No explicit Role: progressBarRangeInfo + setProgress make TalkBack treat this as
+                // an adjustable seek control (swipe up/down); a misleading Role would override that.
+                contentDescription = "Fair-time dial"
+                stateDescription = selectedSpokenLabel
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = selectedIndex.toFloat(),
+                    range = 0f..hours.lastIndex.toFloat().coerceAtLeast(0f),
+                    steps = (hours.size - 2).coerceAtLeast(0),
+                )
+                setProgress { targetIndex ->
+                    if (!expanded) expanded = true
+                    interactionTick++
+                    selectAt(targetIndex.toInt().coerceIn(0, hours.lastIndex))
+                    true
+                }
+                customActions = listOf(
+                    CustomAccessibilityAction(label = "Next hour") {
+                        if (!expanded) expanded = true
+                        interactionTick++
+                        step(1)
+                        true
+                    },
+                    CustomAccessibilityAction(label = "Previous hour") {
+                        if (!expanded) expanded = true
+                        interactionTick++
+                        step(-1)
+                        true
+                    },
+                )
             },
         contentAlignment = Alignment.BottomCenter,
     ) {
     AnimatedContent(
         targetState = expanded,
         modifier = Modifier.fillMaxWidth(),
-        transitionSpec = { Motion.scrubberExpandCollapseTransform(targetState) },
+        transitionSpec = {
+            // Reduce-motion: swap the springy expand/collapse morph for an instant crossfade so the
+            // dial appears/tucks without sliding or scaling (north-star: respect Reduce Motion).
+            if (reduceMotion) {
+                androidx.compose.animation.fadeIn(Motion.quick()) togetherWith
+                    androidx.compose.animation.fadeOut(Motion.quick())
+            } else {
+                Motion.scrubberExpandCollapseTransform(targetState)
+            }
+        },
         contentAlignment = Alignment.BottomCenter,
         label = "fair_scrubber_expand"
     ) { isExpanded ->
@@ -387,11 +488,28 @@ internal fun FairSlotsScrubber(
                 }
 
                 Spacer(Modifier.height(8.dp))
+                // The sentence is instructions, not a status, so it reads in the muted onSurface
+                // caption tint; only the band words carry their band color (primary / tertiary /
+                // error) so color maps to meaning rather than implying one band is "the" state.
+                val legendCaption = buildAnnotatedString {
+                    append("Hold & drag across the day — ")
+                    withStyle(SpanStyle(color = optimalColor, fontWeight = FontWeight.Bold)) {
+                        append("optimal")
+                    }
+                    append(", ")
+                    withStyle(SpanStyle(color = fairColor, fontWeight = FontWeight.Bold)) {
+                        append("fair")
+                    }
+                    append(", ")
+                    withStyle(SpanStyle(color = difficultColor, fontWeight = FontWeight.Bold)) {
+                        append("difficult")
+                    }
+                    append(".")
+                }
                 Text(
-                    text = "Hold & drag across the day — green is optimal, amber is fair, red is hard.",
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = optimalColor
+                    text = legendCaption,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = onSurfaceColor.copy(alpha = 0.7f)
                 )
             }
         }

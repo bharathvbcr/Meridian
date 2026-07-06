@@ -16,12 +16,13 @@ import Foundation
 ///
 /// Hosts mirror the Android `navDeepLink` uri patterns exactly:
 ///   - `meridian://world` → World Clock tab
+///   - `meridian://addzone` → World Clock tab + city picker
 ///   - `meridian://plan`  → Planner tab (also the reminder-tap target)
 ///
 /// Unknown hosts resolve to `nil` so the caller can ignore the link rather than navigating
 /// somewhere surprising.
 enum MeridianDeepLink: Equatable, Sendable {
-    case world
+    case world(openCityPicker: Bool = false)
     case plan
 
     /// The URL scheme the app registers (`Info.plist` `CFBundleURLSchemes`).
@@ -34,9 +35,17 @@ enum MeridianDeepLink: Equatable, Sendable {
         // path component for `meridian:///world`-style links some launchers emit.
         let token = (url.host ?? url.pathComponents.first { $0 != "/" })?.lowercased()
         switch token {
-        case "world": self = .world
-        case "plan":  self = .plan
-        default:      return nil
+        case "world":
+            let queryPicker = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .contains { $0.name == "picker" && $0.value != "0" && $0.value != "false" } ?? false
+            self = .world(openCityPicker: queryPicker)
+        case "plan":
+            self = .plan
+        case "addzone":
+            self = .world(openCityPicker: true)
+        default:
+            return nil
         }
     }
 
@@ -45,6 +54,14 @@ enum MeridianDeepLink: Equatable, Sendable {
         switch self {
         case .world: return .world
         case .plan:  return .plan
+        }
+    }
+
+    /// Whether the World screen should open the city picker on arrival.
+    var opensWorldCityPicker: Bool {
+        switch self {
+        case let .world(openCityPicker): return openCityPicker
+        case .plan: return false
         }
     }
 

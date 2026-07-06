@@ -61,22 +61,30 @@ fun DayNightMap(
     modifier: Modifier = Modifier,
     style: MapStyle = MapStyle.REALISTIC,
     hazeState: HazeState,
+    homeLocation: com.example.core.time.GeoPoint? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isVector = style == MapStyle.VECTOR
     // The map is a single scaled drawImage either way, so the texture only differs in resolution:
     // Realistic/Balanced decode the full 2048×1024 source; Performance halves it (inSampleSize = 2,
     // ~8 MB → 2 MB). Vector decodes no photo at all — it draws bundled land outlines instead.
-    val mapImage = remember(style) {
-        if (isVector) return@remember null
-        try {
-            val opts = BitmapFactory.Options().apply {
-                inSampleSize = if (style == MapStyle.PERFORMANCE) 2 else 1
-            }
-            BitmapFactory.decodeResource(context.resources, com.example.R.drawable.world_map, opts)
-                ?.asImageBitmap()
-        } catch (e: Exception) {
+    // Decoded off the composition thread (like the vector atlas below) so switching to a
+    // photographic style doesn't stall the main thread on a multi-megabyte decode.
+    val mapImage by produceState<ImageBitmap?>(null, style) {
+        value = if (isVector) {
             null
+        } else {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    val opts = BitmapFactory.Options().apply {
+                        inSampleSize = if (style == MapStyle.PERFORMANCE) 2 else 1
+                    }
+                    BitmapFactory.decodeResource(context.resources, com.example.R.drawable.world_map, opts)
+                        ?.asImageBitmap()
+                } catch (e: Exception) {
+                    null
+                }
+            }
         }
     }
     // Vector style: decode the country TopoJSON once into unit-space fill + border paths (see
@@ -109,8 +117,14 @@ fun DayNightMap(
     }
 
     val subsolar = remember(instant) { SolarMath.subsolarPoint(instant) }
-    val pins = remember(instant, zones) {
-        zones.map { it.displayName to ZoneCoordinates.coordinateFor(it.id, instant) }
+    // The home zone pins at the device's actual location when the caller has one (already vetted
+    // against the zone's clock upstream); every other zone pins at its representative city.
+    val pins = remember(instant, zones, homeLocation) {
+        zones.map {
+            val coord = if (it.isHome && homeLocation != null) homeLocation
+            else ZoneCoordinates.coordinateFor(it.id, instant)
+            it.displayName to coord
+        }
     }
 
     // The terminator used to be rasterized as up to ~6,400 alpha-blended drawRect calls (plus a
@@ -120,13 +134,25 @@ fun DayNightMap(
     // point, so it only rebuilds when the scrubbed time actually moves.
     val nightOverlay = remember(subsolar) { buildNightOverlay(subsolar.latitude, subsolar.longitude) }
 
+    // Non-visual payload for TalkBack: the pins carry the screen's core answer — which of *my*
+    // cities are in daylight right now — yet a bare map image is invisible to it. Summarize the
+    // same day/night split the pins are drawn with (cosZenith > 0 == lit) so the map is a
+    // first-class information source, not a decorative image. Cached on the same keys as the pins.
+    val pinsSummary = remember(pins, subsolar) {
+        pinDaylightSummary(pins, subsolar.latitude, subsolar.longitude)
+    }
+
     val oceanFallback = Color(0xFF0B2A52)
     val mapShape = RoundedCornerShape(20.dp)
     // Vector style: translucent fills over the frosted glass surface so the celestial backdrop
     // refracts through like the other cards on this screen.
     val vectorLand = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
     val vectorBorder = Color.White.copy(alpha = 0.38f)
-    val sunColor = MaterialTheme.colorScheme.tertiary
+    // The subsolar sun is the app's primary day semantic: render it in the shared daylight accent so
+    // it reads identically to the WbSunny icon in the zone comparison rows (cross-tab Now/World-Clock
+    // parity), with the warmer daylight glow for the soft halo behind the core disc.
+    val sunColor = GlassDefaults.daylightAccent
+    val sunGlowColor = GlassDefaults.daylightGlow
     val pinColor = MaterialTheme.colorScheme.primary
     val pinNightColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
 
@@ -139,7 +165,8 @@ fun DayNightMap(
                 .onSizeChanged { canvasSize = it }
                 .semantics {
                     contentDescription = "World day and night map. Sun is overhead near " +
-                        "latitude ${subsolar.latitude.toInt()}, longitude ${subsolar.longitude.toInt()} degrees."
+                        "latitude ${subsolar.latitude.toInt()}, longitude ${subsolar.longitude.toInt()} degrees." +
+                        pinsSummary
                 }
         ) {
             // Vector mode gets the full liquid-glass surface as a backdrop layer *behind* the map
@@ -158,6 +185,7 @@ fun DayNightMap(
             Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
+            val map = mapImage
 
             when {
                 // Vector: frosted glass shows through the ocean; land and borders are translucent
@@ -173,7 +201,7 @@ fun DayNightMap(
                     }
                 }
                 // Realistic / Balanced / Performance: photographic Earth texture in full color.
-                mapImage != null -> drawImage(image = mapImage, dstSize = IntSize(w.toInt(), h.toInt()))
+                map != null -> drawImage(image = map, dstSize = IntSize(w.toInt(), h.toInt()))
                 else -> drawRect(color = oceanFallback)
             }
 
@@ -185,9 +213,9 @@ fun DayNightMap(
                 alpha = if (isVector) 0.7f else 1f,
             )
 
-            // Subsolar sun marker.
+            // Subsolar sun marker: warm daylight glow halo under the accent-colored core disc.
             val sunPos = project(subsolar.latitude, subsolar.longitude, w, h)
-            drawCircle(color = sunColor.copy(alpha = 0.35f), radius = h * 0.06f, center = sunPos)
+            drawCircle(color = sunGlowColor.copy(alpha = 0.35f), radius = h * 0.06f, center = sunPos)
             drawCircle(color = sunColor, radius = h * 0.025f, center = sunPos)
 
             // Zone pins, tinted by whether it's day or night there right now.
@@ -239,6 +267,36 @@ private fun buildNightOverlay(subLat: Double, subLng: Double): ImageBitmap {
         }
     }
     return Bitmap.createBitmap(pixels, GRID_COLS, GRID_ROWS, Bitmap.Config.ARGB_8888).asImageBitmap()
+}
+
+/**
+ * TalkBack summary of the pinned cities' current day/night state, appended to the map's
+ * contentDescription. Mirrors the exact predicate the pins are drawn with (cosZenith > 0 == lit),
+ * so the spoken label never diverges from the visible dots. Returns a leading-space-prefixed
+ * clause ready to concatenate, or empty when there are no pins (nothing extra to announce).
+ *
+ * Example: " 3 pinned locations, 2 in daylight: Tokyo, London in daytime; New York at night."
+ */
+private fun pinDaylightSummary(
+    pins: List<Pair<String, com.example.core.time.GeoPoint>>,
+    subLat: Double,
+    subLng: Double,
+): String {
+    if (pins.isEmpty()) return ""
+    val (lit, dark) = pins.partition { (_, coord) ->
+        cosZenith(coord.latitude, coord.longitude, subLat, subLng) > 0.0
+    }
+    val locationWord = if (pins.size == 1) "pinned location" else "pinned locations"
+    val builder = StringBuilder(" ${pins.size} $locationWord, ${lit.size} in daylight")
+    val clauses = buildList {
+        if (lit.isNotEmpty()) add(lit.joinToString(", ") { it.first } + " in daytime")
+        if (dark.isNotEmpty()) add(dark.joinToString(", ") { it.first } + " at night")
+    }
+    if (clauses.isNotEmpty()) {
+        builder.append(": ").append(clauses.joinToString("; "))
+    }
+    builder.append(".")
+    return builder.toString()
 }
 
 /** Equirectangular projection from geo degrees to canvas pixels. */

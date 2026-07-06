@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -29,7 +30,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.data.SavedZone
@@ -47,6 +53,8 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
+/** Android minimum accessible touch target (Material a11y guidance). */
+private val MinTouchTargetSize: Dp = 48.dp
 
 @Composable
 fun JumpToPlaceDateTimeModal(
@@ -85,10 +93,19 @@ fun JumpToPlaceDateTimeModal(
         }
     }
 
-    val localEquivalent = remember(targetZdt, localZoneId, localLocationName, is24Hour) {
+    // Local-equivalent callout: show only the time delta, not the date — the date is
+    // already the hero value in the place-details card above, so echoing it reads as clutter.
+    // Falls back to including the date only when the target lands on a different local day.
+    val localEquivalent = remember(targetZdt, localZoneId, localLocationName, is24Hour, selectedDate) {
         targetZdt?.let { zdt ->
             val local = zdt.withZoneSameInstant(ZoneId.of(localZoneId))
-            "${local.format(TimeFormats.mediumDate())} · ${local.format(TimeFormats.hourMinute(is24Hour))} ($localLocationName)"
+            val localTime = local.format(TimeFormats.hourMinute(is24Hour))
+            val crossesDay = local.toLocalDate() != selectedDate
+            if (crossesDay) {
+                "${local.format(TimeFormats.mediumDate())} · $localTime ($localLocationName)"
+            } else {
+                "$localTime ($localLocationName)"
+            }
         }
     }
 
@@ -253,9 +270,13 @@ fun JumpToPlaceDateTimeModal(
                 localEquivalent?.let {
                     if (selectedZoneId != localZoneId) {
                         Card(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = GlassDefaults.cardShape,
                             colors = calloutCardColors,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .semantics(mergeDescendants = true) {
+                                    contentDescription = "Equals $it your local time"
+                                }
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
@@ -337,7 +358,15 @@ private fun SelectorTile(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                // Guarantee a >=48dp touch target regardless of fontScale-driven text height.
+                .heightIn(min = MinTouchTargetSize)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                // Merge the uppercase label + value into one actionable node so TalkBack
+                // reads "Date, Jul 3" as a single button rather than two separate texts.
+                .semantics(mergeDescendants = true) {
+                    contentDescription = "$label, $value"
+                    role = Role.Button
+                },
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(

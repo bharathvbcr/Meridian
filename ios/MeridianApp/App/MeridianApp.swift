@@ -34,15 +34,26 @@ struct MeridianApp: App {
             Person.self,
             PlannedTask.self,
         ])
-        // VERIFY: ModelConfiguration(groupContainer:) — available since iOS 17, current on iOS 27.
-        let groupConfig = ModelConfiguration(
-            schema: schema,
-            groupContainer: .identifier(AppGroup.identifier)
-        )
+
+        // Prefer the App Group container so the widget and watch read the same store. But
+        // SwiftData calls `fatalError` (it does NOT throw) when the requested App Group is not
+        // present in the runtime entitlements — e.g. a debug build signed without the group, or
+        // a build run from Xcode with no `DEVELOPMENT_TEAM`, where the group is never provisioned.
+        // A `do/catch` therefore cannot save us: the process aborts inside `ModelContainer.init`
+        // before any error is thrown. So we must probe for the container ourselves first and only
+        // ask SwiftData for the group store when it actually exists, otherwise fall back to a
+        // per-app local store so the app still launches.
+        let groupContainerAvailable = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: AppGroup.identifier) != nil
+
+        let primaryConfig = groupContainerAvailable
+            ? ModelConfiguration(schema: schema, groupContainer: .identifier(AppGroup.identifier))
+            : ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
         do {
-            return try ModelContainer(for: schema, configurations: [groupConfig])
+            return try ModelContainer(for: schema, configurations: [primaryConfig])
         } catch {
-            // Last-resort fallback so a bad entitlement does not hard-crash the app.
+            // Last-resort fallback so a store-creation failure does not hard-crash the app.
             let local = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
             if let container = try? ModelContainer(for: schema, configurations: [local]) {
                 return container
@@ -130,10 +141,15 @@ struct MainAppView: View {
     @State private var showOnboarding: Bool = false
     /// The currently selected tab — shared with `ContentView` and driven by deep links.
     @State private var selectedTab: MeridianTab = .now
+    /// One-shot flag: World screen should open the city search sheet (from widget / addzone link).
+    @State private var worldCityPickerPending = false
     /// Strong reference to the notification delegate (the center holds it weakly).
     @State private var notificationDelegate = NotificationDelegate()
     /// Cross-app (ChronosFlow) sync manager — SwiftData-backed; built once in `bootstrap`.
     @State private var interopSync: InteropSyncManager?
+    /// Publishes OUR tasks/zones/people into the App Group for the peer to read —
+    /// the write half of interop (Android: the always-live `InteropProvider`).
+    @State private var interopExporter: InteropExporter?
 
     // MARK: Body
 
@@ -141,6 +157,7 @@ struct MainAppView: View {
         Group {
             if let viewModel {
                 ContentView(viewModel: viewModel, selectedTab: $selectedTab)
+                    .environment(\.worldCityPickerRequest, $worldCityPickerPending)
                     .meridianEnvironment(
                         viewModel: viewModel,
                         settings: settingsRepo.settings,
@@ -161,12 +178,14 @@ struct MainAppView: View {
                     }
             } else {
                 // Splash / loading state while the view-model initialises.
-                Color(red: 0.008, green: 0.024, blue: 0.090)
-                    .ignoresSafeArea()
-                    .overlay {
+                ZStack {
+                    MeridianColors.background.ignoresSafeArea()
+                    VStack(spacing: 20) {
+                        MeridianWordmark()
                         ProgressView()
-                            .tint(Color(red: 0.376, green: 0.804, blue: 1.0))
+                            .tint(MeridianColors.primary)
                     }
+                }
             }
         }
         .onAppear { bootstrap() }
@@ -188,6 +207,25 @@ struct MainAppView: View {
             if newPhase == .active, let interopSync {
                 Task { await interopSync.syncFromPeer() }
             }
+            // Publish our own snapshot both ways across the transition, and re-arm the Live
+            // Activity on foreground (ActivityKit only permits starting one while active, so
+            // an event that entered the 24 h window in the background starts here).
+            if newPhase == .active || newPhase == .background {
+                interopExporter?.exportSnapshot()
+            }
+            if newPhase == .active {
+                viewModel?.refreshLiveActivity()
+                viewModel?.prewarmAi()
+            }
+            if newPhase == .background {
+                viewModel?.releaseAiModels()
+            }
+        }
+        // Every persisted change (any context) re-publishes the interop snapshot, keeping the
+        // shared file as current as Android's live ContentProvider. Same didSave-driven pattern
+        // as WatchSyncManager.
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave).receive(on: RunLoop.main)) { _ in
+            interopExporter?.exportSnapshot()
         }
     }
 
@@ -209,6 +247,12 @@ struct MainAppView: View {
         interopSync = sync
         Task { await sync.syncFromPeer() }
 
+        // Publish our first snapshot so the peer sees Meridian data without waiting for an
+        // edit (Android's provider served fresh rows from the moment it was installed).
+        let exporter = InteropExporter(repository: TaskInteropRepository(context: modelContext))
+        interopExporter = exporter
+        exporter.exportSnapshot()
+
         // Route reminder taps and App-Intent launches through the same handler as onOpenURL.
         notificationDelegate.onDeepLink = { url in
             if let link = MeridianDeepLink(url: url) { route(link) }
@@ -221,13 +265,16 @@ struct MainAppView: View {
 
         // Kick off Apple Watch sync (Android `WearSyncManager`). Self-wiring: activates the
         // WCSession, pushes an initial snapshot, and re-syncs on every SwiftData save.
-        WatchSyncManager.shared.activate(modelContainer: Self.sharedModelContainer)
+        WatchSyncManager.shared.activate(modelContainer: MeridianApp.sharedModelContainer)
     }
 
     // MARK: - Deep-link routing
 
     /// Single navigation entry point shared by URL scheme, App Intents, and reminder taps.
     private func route(_ link: MeridianDeepLink) {
+        if link.opensWorldCityPicker {
+            worldCityPickerPending = true
+        }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
             selectedTab = link.tab
         }

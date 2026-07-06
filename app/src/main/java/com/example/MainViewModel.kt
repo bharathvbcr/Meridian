@@ -1,6 +1,7 @@
 package com.example
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -21,6 +22,9 @@ import com.example.core.time.TzAbbreviations
 import com.example.core.ai.GeminiRepository
 import com.example.core.ai.MeridianAiTools
 import com.example.core.ai.AiResult
+import com.example.core.ai.AiProvenance
+import com.example.core.ai.AiEngine
+import com.example.core.ai.ChatTurn
 import com.example.feature.calendar.CalendarEvent
 import com.example.feature.calendar.CalendarRepository
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +32,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -38,13 +43,13 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.Locale
 
-/** [onDevice] tags an assistant reply with where it ran (true = Gemini Nano, false = cloud); null when N/A. */
+/** [provenance] tags an assistant reply with where it ran; null when N/A. */
 data class ChatMessage(
     val id: Long,
     val sender: String,
     val text: String,
     val isUser: Boolean,
-    val onDevice: Boolean? = null,
+    val provenance: AiProvenance? = null,
 )
 
 /** How many airport matches a single search may contribute, so they never crowd out cities. */
@@ -74,7 +79,9 @@ class MainViewModel(
             resolvePlace = { query -> searchTimeZones(query).firstOrNull() },
             findOverlap = findOverlapUseCase,
             now = { timeEngine.now() },
-        )
+        ),
+        context = application,
+        aiEngineProvider = { settings.value.aiEngine },
     )
 
     val settings: StateFlow<MeridianSettings> = settingsRepository.settings
@@ -89,19 +96,42 @@ class MainViewModel(
     val people: StateFlow<List<Person>> = personDao.getAllPeople()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
+    private val _deviceCoordinate = MutableStateFlow<com.example.core.time.GeoPoint?>(null)
+
+    /**
+     * Where to pin the home zone on the day/night map: the device's actual last-known location,
+     * but only while that fix plausibly lies inside the saved home zone (same clock as the zone
+     * nearest the fix). Otherwise null, and the map falls back to the zone's representative city —
+     * so a home chosen manually for a faraway city still pins at that city (§5.1, §5.2).
+     */
+    val homeLocation: StateFlow<com.example.core.time.GeoPoint?> =
+        combine(_deviceCoordinate, savedZones) { coordinate, zones ->
+            val home = zones.firstOrNull { it.isHome } ?: return@combine null
+            coordinate?.takeIf {
+                com.example.core.time.ZoneCoordinates.pointMatchesZoneClock(home.id, it, Instant.now())
+            }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    /** Re-reads the last-known device fix (cheap, offline); safe to call without permission. */
+    fun refreshDeviceCoordinate() {
+        viewModelScope.launch(Dispatchers.Default) {
+            _deviceCoordinate.value = locationZoneResolver.lastKnownCoordinate()
+        }
+    }
+
     private var nextChatMessageId = 0L
 
     private fun chatMessage(
         sender: String,
         text: String,
         isUser: Boolean,
-        onDevice: Boolean? = null,
+        provenance: AiProvenance? = null,
     ) = ChatMessage(
         id = nextChatMessageId++,
         sender = sender,
         text = text,
         isUser = isUser,
-        onDevice = onDevice,
+        provenance = provenance,
     )
 
     private val welcomeMessage = chatMessage(
@@ -117,6 +147,10 @@ class MainViewModel(
     private val _aiLoading = MutableStateFlow(false)
     val aiLoading: StateFlow<Boolean> = _aiLoading.asStateFlow()
 
+    /** Partial assistant text while rules/cache/LLM paths stream into the UI. */
+    private val _aiPartialText = MutableStateFlow<String?>(null)
+    val aiPartialText: StateFlow<String?> = _aiPartialText.asStateFlow()
+
     // A model-proposed event awaiting explicit user confirmation before any write (§12.8).
     private val _pendingDraft = MutableStateFlow<PlannedTask?>(null)
     val pendingDraft: StateFlow<PlannedTask?> = _pendingDraft.asStateFlow()
@@ -130,6 +164,9 @@ class MainViewModel(
     init {
         // Extract + open the bundled city/airport database up front so the first search is instant.
         viewModelScope.launch { runCatching { geoPlaceRepository.prewarm() } }
+        refreshDeviceCoordinate()
+        prewarmAi()
+        registerAiLifecycleCallbacks()
         viewModelScope.launch {
             // Check if db is empty and insert initial values
             zoneDao.getAllZones().collect { zones ->
@@ -233,6 +270,45 @@ class MainViewModel(
 
     fun setOnboardingComplete(complete: Boolean) {
         viewModelScope.launch { settingsRepository.setOnboardingComplete(complete) }
+    }
+
+    fun setAiEngine(engine: AiEngine) {
+        viewModelScope.launch { settingsRepository.setAiEngine(engine) }
+    }
+
+    /** Pre-warms the on-device model KV cache when idle. */
+    fun prewarmAi() {
+        viewModelScope.launch { geminiRepository.prewarm() }
+    }
+
+    /** Releases on-device model memory — call on background / trim. */
+    fun releaseAiModels() {
+        viewModelScope.launch { geminiRepository.releaseOnDeviceModel() }
+    }
+
+    private fun registerAiLifecycleCallbacks() {
+        val app = getApplication<Application>()
+        app.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onConfigurationChanged(newConfig: android.content.res.Configuration) = Unit
+            override fun onLowMemory() { releaseAiModels() }
+            override fun onTrimMemory(level: Int) {
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) releaseAiModels()
+            }
+        })
+    }
+
+    private fun recentChatTurns(): List<ChatTurn> {
+        return _chatMessages.value
+            .filter { it.sender != "System Error" }
+            .takeLast(6)
+            .map { msg ->
+                ChatTurn(
+                    role = if (msg.isUser) "User" else "Assistant",
+                    text = msg.text,
+                )
+            }
+            .dropLast(1) // exclude the message just appended for this request
+            .takeLast(4)
     }
 
     /**
@@ -410,6 +486,7 @@ class MainViewModel(
         viewModelScope.launch {
             val zoneId = locationZoneResolver.resolveHomeZoneId()
             if (zoneId != null) setAnchorZone(zoneId, null, ZoneAnchorRole.RESIDENCE)
+            refreshDeviceCoordinate()
             onResult(zoneId)
         }
     }
@@ -495,18 +572,22 @@ class MainViewModel(
         val userMsg = chatMessage("User", messageText, true)
         _chatMessages.value = _chatMessages.value + userMsg
         _aiLoading.value = true
+        _aiPartialText.value = null
 
         val homeZoneId = savedZones.value.firstOrNull { it.isHome }?.id ?: ZoneId.systemDefault().id
+        val recentTurns = recentChatTurns()
         viewModelScope.launch {
             when (val result = geminiRepository.processUserPrompt(
                 messageText,
                 homeZoneId,
                 savedZones.value,
                 people.value,
+                recentTurns = recentTurns,
+                onPartial = { partial -> _aiPartialText.value = partial },
             )) {
                 is AiResult.Success -> {
                     _chatMessages.value = _chatMessages.value +
-                        chatMessage("Meridian Assistant", result.response, false, onDevice = result.onDevice)
+                        chatMessage("Meridian Assistant", result.response, false, provenance = result.provenance)
                 }
                 is AiResult.Scheduled -> {
                     // Propose, never auto-write — the user confirms below (§12.8).
@@ -515,13 +596,14 @@ class MainViewModel(
                         "Meridian Assistant",
                         "I drafted '${result.task.title}'. Review and confirm it below to add it.",
                         false,
-                        onDevice = result.onDevice,
+                        provenance = result.provenance,
                     )
                 }
                 is AiResult.Error -> {
                     _chatMessages.value = _chatMessages.value + chatMessage("System Error", result.message, false)
                 }
             }
+            _aiPartialText.value = null
             _aiLoading.value = false
         }
     }
@@ -530,6 +612,17 @@ class MainViewModel(
     fun clearChat() {
         _chatMessages.value = listOf(welcomeMessage)
         _pendingDraft.value = null
+    }
+
+    /** Removes the error bubble and resends the user message that preceded it. */
+    fun retryAiMessage(errorMessageId: Long) {
+        if (_aiLoading.value) return
+        val messages = _chatMessages.value
+        val errorIdx = messages.indexOfFirst { it.id == errorMessageId }
+        if (errorIdx <= 0) return
+        val userText = messages.subList(0, errorIdx).lastOrNull { it.isUser }?.text ?: return
+        _chatMessages.value = messages.filter { it.id != errorMessageId }
+        sendAiMessage(userText)
     }
 
     /** Commits the pending AI-proposed draft to the plan after explicit user confirmation. */

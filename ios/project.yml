@@ -29,6 +29,8 @@ options:
     watchOS: "27.0"
   groupSortPosition: top
   generateEmptyDirectories: true
+  # XcodeGen 2.45 maps watchOS `application` → watchapp2; single-target apps need plain application.
+  postGenCommand: sed -i '' 's/com.apple.product-type.application.watchapp2/com.apple.product-type.application/g' Meridian.xcodeproj/project.pbxproj
 
 # Project-wide build settings inherited by every target.
 settings:
@@ -63,6 +65,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian
         PRODUCT_NAME: Meridian
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_FILE: MeridianApp/Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: MeridianApp/Resources/Meridian.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"   # iPhone + iPad
@@ -121,7 +124,8 @@ targets:
   # watchOS companion app
   # ───────────────────────────────────────────────────────────────────────────
   MeridianWatch:
-    type: application.watchapp2
+    # Single-target watch app (WKApplication: true) — not the legacy watchapp2 container.
+    type: application
     platform: watchOS
     deploymentTarget: "27.0"
     settings:
@@ -136,6 +140,11 @@ targets:
       - path: MeridianWatch
       # Value types shared over WatchConnectivity (WatchSyncPayload / WatchZone / WatchEvent).
       - path: Shared/SharedModels.swift
+      # Persists the last payload for the watch widget extension (writer side).
+      - path: Shared/WatchWidgetStore.swift
+    dependencies:
+      - target: MeridianWatchWidget
+        embed: true
     info:
       path: MeridianWatch/Info.plist
       properties:
@@ -143,6 +152,53 @@ targets:
         WKApplication: true
         # Companion linkage to the phone app (single-target watch app, Xcode 14+ style).
         WKCompanionAppBundleIdentifier: com.example.meridian
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # watchOS widget extension (accessory complications / Smart Stack)
+  # ───────────────────────────────────────────────────────────────────────────
+  # The glanceable watch surface Android ships as the SecondZoneTileService Wear
+  # Tile: local + second-zone time and the next-event countdown, fed from the last
+  # WatchSyncPayload the watch app persisted into the App Group (WatchWidgetStore).
+  MeridianWatchWidget:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "27.0"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian.watchkitapp.widget
+        PRODUCT_NAME: MeridianWatchWidget
+        CODE_SIGN_ENTITLEMENTS: MeridianWatchWidget/MeridianWatchWidget.entitlements
+        WATCHOS_DEPLOYMENT_TARGET: "27.0"
+        TARGETED_DEVICE_FAMILY: "4"
+        SDKROOT: watchos
+    sources:
+      - path: MeridianWatchWidget
+      - path: Shared/SharedModels.swift
+      - path: Shared/WatchWidgetStore.swift
+    info:
+      path: MeridianWatchWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Meridian
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Unit tests (logic tests for the time/overlap core)
+  # ───────────────────────────────────────────────────────────────────────────
+  MeridianTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "27.0"
+    sources:
+      - path: MeridianTests
+    dependencies:
+      - target: MeridianApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.meridian.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Meridian.app/Meridian"
+        BUNDLE_LOADER: "$(TEST_HOST)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Schemes
@@ -154,10 +210,14 @@ schemes:
         MeridianApp: all
         MeridianWidget: all
         MeridianWatch: all
+        MeridianWatchWidget: all
+        MeridianTests: [test]
     run:
       config: Debug
     test:
       config: Debug
+      targets:
+        - MeridianTests
     profile:
       config: Release
     archive:

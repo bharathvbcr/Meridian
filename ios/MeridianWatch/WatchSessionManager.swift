@@ -16,6 +16,9 @@ import Observation
 #if canImport(WatchConnectivity)
 import WatchConnectivity
 #endif
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 // MARK: - WatchSessionManager
 
@@ -76,6 +79,13 @@ final class WatchSessionManager: NSObject {
         guard let decoded else { return }
         payload = decoded
         hasReceivedData = true
+        // Persist for the watch widget extension and refresh its timelines so the
+        // accessory complications track the phone (Android: the Data Layer listener
+        // persists prefs and requests a Tile update).
+        WatchWidgetStore.save(decoded)
+        #if canImport(WidgetKit)
+        WidgetCenter.shared.reloadAllTimelines()
+        #endif
     }
 }
 

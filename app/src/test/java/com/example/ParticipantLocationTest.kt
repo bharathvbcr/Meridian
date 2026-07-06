@@ -2,6 +2,7 @@ package com.example
 
 import com.example.core.data.Person
 import com.example.core.data.SavedZone
+import com.example.core.data.localLocationLabel
 import com.example.feature.planner.buildMeetingParticipants
 import com.example.feature.planner.buildParticipantLocationGroups
 import com.example.feature.planner.buildSelectedParticipantLabels

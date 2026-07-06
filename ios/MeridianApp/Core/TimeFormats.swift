@@ -38,45 +38,49 @@ enum TimeFormats {
     ///   - timeZone: The zone the wall-clock time is rendered in.
     ///   - use24Hour: When `true`, forces 24-hour notation.
     static func hourMinuteStyle(timeZone: TimeZone, use24Hour: Bool) -> Date.FormatStyle {
-        Date.FormatStyle()
+        var style = Date.FormatStyle()
             .hour(.defaultDigits(amPM: .abbreviated))
             .minute(.twoDigits)
-            .timeZone(.identifier(timeZone.identifier))
             .locale(locale(use24Hour: use24Hour))
+        style.timeZone = timeZone
+        return style
     }
 
     /// A `Sendable` `Date.FormatStyle` rendering hour + minute + second,
     /// e.g. "9:05:42 AM" or "09:05:42".
     static func hourMinuteSecondStyle(timeZone: TimeZone, use24Hour: Bool) -> Date.FormatStyle {
-        Date.FormatStyle()
+        var style = Date.FormatStyle()
             .hour(.defaultDigits(amPM: .abbreviated))
             .minute(.twoDigits)
             .second(.twoDigits)
-            .timeZone(.identifier(timeZone.identifier))
             .locale(locale(use24Hour: use24Hour))
+        style.timeZone = timeZone
+        return style
     }
 
     /// A `Sendable` `Date.FormatStyle` rendering a short weekday + date, e.g. "Mon, Jun 20".
     static func shortDateStyle(timeZone: TimeZone) -> Date.FormatStyle {
-        Date.FormatStyle()
+        var style = Date.FormatStyle()
             .weekday(.abbreviated)
             .month(.abbreviated)
             .day(.defaultDigits)
-            .timeZone(.identifier(timeZone.identifier))
             .locale(.current)
+        style.timeZone = timeZone
+        return style
     }
 
     /// A `Sendable` `Date.FormatStyle` rendering weekday, date, and time,
     /// e.g. "Mon, Jun 20, 9:05 AM" or "Mon, Jun 20, 09:05".
     static func fullDateTimeStyle(timeZone: TimeZone, use24Hour: Bool) -> Date.FormatStyle {
-        Date.FormatStyle()
+        var style = Date.FormatStyle()
             .weekday(.abbreviated)
             .month(.abbreviated)
             .day(.defaultDigits)
             .hour(.defaultDigits(amPM: .abbreviated))
             .minute(.twoDigits)
-            .timeZone(.identifier(timeZone.identifier))
             .locale(locale(use24Hour: use24Hour))
+        style.timeZone = timeZone
+        return style
     }
 
     // MARK: - String convenience wrappers

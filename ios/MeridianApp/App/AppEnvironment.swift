@@ -69,10 +69,31 @@ private struct SelectTabKey: EnvironmentKey {
     static let defaultValue: @MainActor (MeridianTab) -> Void = { _ in }
 }
 
+private struct WorldCityPickerRequestKey: EnvironmentKey {
+    static let defaultValue: Binding<Bool> = .constant(false)
+}
+
+private struct TabBarInsetHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 96
+}
+
 extension EnvironmentValues {
     var selectTab: @MainActor (MeridianTab) -> Void {
         get { self[SelectTabKey.self] }
         set { self[SelectTabKey.self] = newValue }
+    }
+
+    /// When set to `true`, `WorldClockScreen` opens the city picker then clears the flag.
+    var worldCityPickerRequest: Binding<Bool> {
+        get { self[WorldCityPickerRequestKey.self] }
+        set { self[WorldCityPickerRequestKey.self] = newValue }
+    }
+
+    /// Reserved height for the floating tab bar (72 collapsed, 96 expanded). Scrubbers use this
+    /// so they stay above the pill when it minimizes on scroll.
+    var tabBarInsetHeight: CGFloat {
+        get { self[TabBarInsetHeightKey.self] }
+        set { self[TabBarInsetHeightKey.self] = newValue }
     }
 }
 

@@ -6,6 +6,12 @@ import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
 import android.graphics.BitmapFactory
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.aspectRatio
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -20,9 +27,14 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import com.example.core.designsystem.GlassDefaults
+import com.example.core.designsystem.LocalReduceMotion
+import com.example.core.designsystem.Motion
 import com.example.core.data.MapStyle
 import com.example.core.data.SavedZone
 import com.example.core.time.SolarMath
@@ -31,6 +43,7 @@ import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.asin
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -155,19 +168,27 @@ fun GlobeView(
     atmosphereColor: Color,
     modifier: Modifier = Modifier,
     style: MapStyle = MapStyle.REALISTIC,
+    homeLocation: com.example.core.time.GeoPoint? = null,
 ) {
     // Performance style shades a flat two-tone sphere, so it never samples the texture; skip the
     // photographic decode (and the ~8 MB it would hold) and run purely from the day/night colors.
     val textured = style != MapStyle.PERFORMANCE
     val extras = style == MapStyle.REALISTIC
     val context = androidx.compose.ui.platform.LocalContext.current
-    val mapBitmap = remember(textured) {
-        if (!textured) {
+    // Decoded off the composition thread — the full-resolution source is ~8 MB, and a synchronous
+    // decode here would freeze the frame the globe first appears on. The flat day/night sphere
+    // renders immediately and the texture pops in when ready.
+    val mapBitmap by produceState<android.graphics.Bitmap?>(null, textured) {
+        value = if (!textured) {
             null
-        } else try {
-            BitmapFactory.decodeResource(context.resources, com.example.R.drawable.world_map)
-        } catch (e: Exception) {
-            null
+        } else {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    BitmapFactory.decodeResource(context.resources, com.example.R.drawable.world_map)
+                } catch (e: Exception) {
+                    null
+                }
+            }
         }
     }
     val bitmapWidth = mapBitmap?.width ?: 0
@@ -183,10 +204,11 @@ fun GlobeView(
         if (canUseShader) runCatching { RuntimeShader(EARTH_AGSL) }.getOrNull() else null
     }
     val bitmapShader = remember(mapBitmap, canUseShader, textured) {
+        val bmp = mapBitmap
         if (!canUseShader) {
             null
-        } else if (mapBitmap != null) {
-            BitmapShader(mapBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        } else if (bmp != null) {
+            BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         } else {
             val placeholder = android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
             BitmapShader(placeholder, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
@@ -196,25 +218,84 @@ fun GlobeView(
 
     // Pixel buffer is only needed by the Canvas fallback (the shader samples the texture itself).
     val pixelArray = remember(mapBitmap, shaderActive) {
-        if (!shaderActive && mapBitmap != null && bitmapWidth > 0 && bitmapHeight > 0) {
+        val bmp = mapBitmap
+        if (!shaderActive && bmp != null && bitmapWidth > 0 && bitmapHeight > 0) {
             val arr = IntArray(bitmapWidth * bitmapHeight)
-            mapBitmap.getPixels(arr, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight)
+            bmp.getPixels(arr, 0, bitmapWidth, 0, 0, bitmapWidth, bitmapHeight)
             arr
         } else {
             null
         }
     }
+    // One brush per compiled shader — allocating ShaderBrush inside the draw lambda would churn
+    // an object per spin frame.
+    val earthBrush = remember(earthShader) { earthShader?.let { ShaderBrush(it) } }
     var centerLng by remember { mutableFloatStateOf(0f) }
     val subsolar = remember(instant) { SolarMath.subsolarPoint(instant) }
-    val pins = remember(instant, zones) {
-        zones.map { it.displayName to ZoneCoordinates.coordinateFor(it.id, instant) }
+    // Same rule as DayNightMap: the home zone pins at the device's vetted location when provided.
+    val pins = remember(instant, zones, homeLocation) {
+        zones.map {
+            val coord = if (it.isHome && homeLocation != null) homeLocation
+            else ZoneCoordinates.coordinateFor(it.id, instant)
+            it.displayName to coord
+        }
+    }
+
+    // Cross-tab day/night parity: the subsolar marker reads in the *same* shared daylight semantics
+    // as the 2D map's sun and the WbSunny row icon, rather than the caller's incidental theme color.
+    // The passed sunColor stays part of the signature but the core disc uses the design token so the
+    // Liquid-Glass day semantic is constant when the user flips the 2D/3D segmented control.
+    val daylightAccent = GlassDefaults.daylightAccent
+    val daylightGlow = GlassDefaults.daylightGlow
+
+    val reduceMotion = LocalReduceMotion.current
+
+    // The photographic Earth texture (~8 MB) decodes off-thread; until it lands the flat two-tone
+    // sphere shows. Two loading affordances so the swap reads as "detail arriving", not a glitch:
+    //  1) while the bitmap is still null (textured styles only), a faint atmosphere ring breathes.
+    //  2) once the texture is ready, its draw fades in over one smooth spring instead of popping.
+    val awaitingTexture = textured && mapBitmap == null
+    val textureAlpha by animateFloatAsState(
+        targetValue = if (awaitingTexture) 0f else 1f,
+        animationSpec = if (reduceMotion) tween(0) else Motion.smooth(),
+        label = "GlobeTextureFadeIn",
+    )
+    // The infinite pulse must be created unconditionally (composable calls can't be gated on a value
+    // that toggles between recompositions); its animated alpha is only *used* while the texture is
+    // still loading. Reduce-motion collapses it to a steady faint ring — the "still loading" cue
+    // stays, the motion doesn't.
+    val pulseTransition = rememberInfiniteTransition(label = "GlobeLoadingPulse")
+    val pulseAlpha by pulseTransition.animateFloat(
+        initialValue = 0.10f,
+        targetValue = 0.32f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1100),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "GlobeLoadingPulseAlpha",
+    )
+    val loadingPulse = when {
+        !awaitingTexture -> 0f
+        reduceMotion -> 0.22f
+        else -> pulseAlpha
+    }
+
+    // Live, information-rich TalkBack summary — mirrors the 2D map so the globe is not a dead-end for
+    // screen readers. Announces the subsolar (sun-overhead) position and which pinned cities are in
+    // daylight vs. night right now (same cosZenith split the dots are drawn with). Cached on the same
+    // keys as the pins so the spoken label never diverges from the visible state.
+    val globeDescription = remember(pins, subsolar) {
+        "Rotatable 3D globe showing day and night. Sun is overhead near latitude " +
+            "${subsolar.latitude.roundToInt()}, longitude ${subsolar.longitude.roundToInt()} degrees." +
+            pinDaylightSummary(pins, subsolar.latitude, subsolar.longitude) +
+            " Drag to spin."
     }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(1f)
-            .semantics { contentDescription = "Rotatable 3D globe showing day and night. Drag to spin." }
+            .semantics { contentDescription = globeDescription }
             .pointerInput(Unit) {
                 detectDragGestures { change, drag ->
                     change.consume()
@@ -227,21 +308,26 @@ fun GlobeView(
         val cy = size.height / 2f
         val lng0 = centerLng.toDouble()
 
-        if (shaderActive && earthShader != null && bitmapShader != null) {
-            drawEarthSphere(
-                shader = earthShader,
-                tex = bitmapShader,
-                texWidth = bitmapWidth.coerceAtLeast(1),
-                texHeight = bitmapHeight.coerceAtLeast(1),
-                centerLng = centerLng,
-                subLat = subsolar.latitude.toFloat(),
-                subLng = subsolar.longitude.toFloat(),
-                dayColor = dayColor,
-                nightColor = nightColor,
-                atmosphereColor = atmosphereColor,
-                textured = textured,
-                extras = extras,
-            )
+        if (shaderActive && earthShader != null && bitmapShader != null && earthBrush != null) {
+            // Fade the textured sphere in once its bitmap is ready (textured styles); the flat
+            // Performance sphere and reduce-motion both resolve textureAlpha to 1f immediately.
+            drawWithLayerAlpha(textureAlpha) {
+                drawEarthSphere(
+                    shader = earthShader,
+                    brush = earthBrush,
+                    tex = bitmapShader,
+                    texWidth = bitmapWidth.coerceAtLeast(1),
+                    texHeight = bitmapHeight.coerceAtLeast(1),
+                    centerLng = centerLng,
+                    subLat = subsolar.latitude.toFloat(),
+                    subLng = subsolar.longitude.toFloat(),
+                    dayColor = dayColor,
+                    nightColor = nightColor,
+                    atmosphereColor = atmosphereColor,
+                    textured = textured,
+                    extras = extras,
+                )
+            }
         } else {
             drawCanvasGlobe(
                 r = r,
@@ -260,6 +346,19 @@ fun GlobeView(
             )
         }
 
+        // Loading affordance: while the photographic texture is still decoding, breathe a faint
+        // atmosphere ring around the flat sphere so the globe reads as "loading detail" rather than
+        // looking finished. Collapses to a steady faint ring under reduce-motion (loadingPulse is a
+        // constant there). Drawn under the pins so the pins stay the clearest element.
+        if (loadingPulse > 0f) {
+            drawCircle(
+                color = atmosphereColor.copy(alpha = loadingPulse),
+                radius = r * 1.055f,
+                center = Offset(cx, cy),
+                style = Stroke(width = r * 0.02f),
+            )
+        }
+
         // Pins on the visible (front) hemisphere — crisp vector overlay for both paths.
         pins.forEach { (_, coord) ->
             val dLng = (coord.longitude - lng0) * DEG
@@ -269,17 +368,24 @@ fun GlobeView(
                 val sy = sin(coord.latitude * DEG).toFloat()
                 val pos = Offset(cx + sx * r, cy - sy * r)
                 val lit = cosZenith(coord.latitude, coord.longitude, subsolar.latitude, subsolar.longitude) > 0.0
+                // Lit pins carry the primary pin accent, night pins the muted night color — the same
+                // pinColor / pinNightColor split the 2D map uses, so a dot's day/night state matches
+                // across the 2D/3D toggle without a legend.
                 drawCircle(Color.White, radius = r * 0.022f, center = pos)
                 drawCircle(if (lit) pinColor else pinNightColor, radius = r * 0.014f, center = pos)
             }
         }
 
-        // Subsolar sun marker, if on the visible hemisphere.
+        // Subsolar sun marker, if on the visible hemisphere. Rendered in the shared daylight accent
+        // (with a soft daylight-glow halo) so it reads identically to the sun on the 2D map and the
+        // WbSunny row icon — the Liquid-Glass day semantic stays constant across the 2D/3D toggle.
         val sunDLng = (subsolar.longitude - lng0) * DEG
         if (cos(subsolar.latitude * DEG) * cos(sunDLng) >= 0.0) {
             val sx = (cos(subsolar.latitude * DEG) * sin(sunDLng)).toFloat()
             val sy = sin(subsolar.latitude * DEG).toFloat()
-            drawCircle(sunColor, radius = r * 0.03f, center = Offset(cx + sx * r, cy - sy * r))
+            val sunPos = Offset(cx + sx * r, cy - sy * r)
+            drawCircle(daylightGlow.copy(alpha = 0.35f), radius = r * 0.055f, center = sunPos)
+            drawCircle(daylightAccent, radius = r * 0.03f, center = sunPos)
         }
     }
 }
@@ -288,6 +394,7 @@ fun GlobeView(
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 private fun DrawScope.drawEarthSphere(
     shader: RuntimeShader,
+    brush: ShaderBrush,
     tex: BitmapShader,
     texWidth: Int,
     texHeight: Int,
@@ -310,7 +417,7 @@ private fun DrawScope.drawEarthSphere(
     shader.setFloatUniform("uTextured", if (textured) 1f else 0f)
     shader.setFloatUniform("uExtras", if (extras) 1f else 0f)
     shader.setInputShader("uTex", tex)
-    drawRect(brush = ShaderBrush(shader))
+    drawRect(brush = brush)
 }
 
 /** CPU fallback (pre-API 33): sample the texture across a grid over the disc. */
@@ -398,3 +505,56 @@ private fun DrawScope.drawCanvasGlobe(
 private fun cosZenith(lat: Double, lng: Double, subLat: Double, subLng: Double): Double =
     sin(lat * DEG) * sin(subLat * DEG) +
         cos(lat * DEG) * cos(subLat * DEG) * cos((lng - subLng) * DEG)
+
+/**
+ * Runs [block] inside an alpha-composited layer so the textured Earth (a single shader-filled
+ * drawRect) can fade in as one unit. At `alpha >= 1` it draws directly — the common steady state —
+ * so the saveLayer cost is paid only during the brief load-in fade, and never under reduce-motion
+ * (which pins the alpha to 1 instantly). Values are clamped to a valid [0, 1] range.
+ */
+private inline fun DrawScope.drawWithLayerAlpha(alpha: Float, block: DrawScope.() -> Unit) {
+    val a = alpha.coerceIn(0f, 1f)
+    if (a >= 1f) {
+        block()
+        return
+    }
+    if (a <= 0f) return
+    val paint = androidx.compose.ui.graphics.Paint().apply { this.alpha = a }
+    drawIntoCanvas { canvas ->
+        canvas.saveLayer(
+            androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height),
+            paint,
+        )
+        block()
+        canvas.restore()
+    }
+}
+
+/**
+ * Screen-reader summary of the pinned cities' day/night split — a private mirror of the 2D map's
+ * announcement so the globe conveys the same core answer ("which of *my* cities are in daylight
+ * now") instead of being an information dead-end for TalkBack. Uses the same `cosZenith > 0` test
+ * the visible dots are drawn with, so the spoken label never diverges from the picture. Returns a
+ * leading-space-prefixed clause ready to concatenate, or empty when there are no pins.
+ */
+private fun pinDaylightSummary(
+    pins: List<Pair<String, com.example.core.time.GeoPoint>>,
+    subLat: Double,
+    subLng: Double,
+): String {
+    if (pins.isEmpty()) return ""
+    val (lit, dark) = pins.partition { (_, coord) ->
+        cosZenith(coord.latitude, coord.longitude, subLat, subLng) > 0.0
+    }
+    val locationWord = if (pins.size == 1) "pinned location" else "pinned locations"
+    val builder = StringBuilder(" ${pins.size} $locationWord, ${lit.size} in daylight")
+    val clauses = buildList {
+        if (lit.isNotEmpty()) add(lit.joinToString(", ") { it.first } + " in daytime")
+        if (dark.isNotEmpty()) add(dark.joinToString(", ") { it.first } + " at night")
+    }
+    if (clauses.isNotEmpty()) {
+        builder.append(": ").append(clauses.joinToString("; "))
+    }
+    builder.append(".")
+    return builder.toString()
+}

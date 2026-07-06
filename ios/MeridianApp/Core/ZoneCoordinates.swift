@@ -74,6 +74,17 @@ public enum ZoneGeo {
         squaredDistance(lat: lat, lng: lng, point: point).squareRoot()
     }
 
+    /// True when `point` plausibly lies inside `zoneId`'s territory: the zone nearest to the point
+    /// keeps the same clock as `zoneId` at `instant`. Used to decide whether the device's own fix
+    /// may stand in for the home zone's representative city on the map — a home set manually to a
+    /// faraway city keeps pinning at that city. (Android `pointMatchesZoneClock` parity.)
+    public static func pointMatchesZoneClock(zoneId: String, point: GeoPoint, at instant: Date = .now) -> Bool {
+        let nearest = nearestKnownZone(lat: point.latitude, lng: point.longitude)
+        guard let zone = TimeZone(identifier: zoneId),
+              let nearestZone = TimeZone(identifier: nearest) else { return false }
+        return zone.secondsFromGMT(for: instant) == nearestZone.secondsFromGMT(for: instant)
+    }
+
     // MARK: - Private
 
     private static func squaredDistance(lat: Double, lng: Double, point: GeoPoint) -> Double {

@@ -34,6 +34,8 @@ struct SlotCard: View {
     /// Bumped on any button tap so `.sensoryFeedback` fires a light impact.
     @State private var feedbackTick = 0
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private let calendarRepo = CalendarRepository()
 
     private var localZone: TimeZone { TimeFormats.safeTimeZone(id: localZoneId) }
@@ -77,7 +79,7 @@ struct SlotCard: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: MeridianSpacing.sm.rawValue) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(headline)
                     .font(.titleMedium)
@@ -87,14 +89,20 @@ struct SlotCard: View {
                     .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
             }
-            Spacer(minLength: 8)
+            // Combine time-range + location into a single VoiceOver stop so the header
+            // reads "9:00 – 9:45 · Jul 3, San Francisco" instead of three separate stops.
+            .accessibilityElement(children: .combine)
+            Spacer(minLength: MeridianSpacing.sm.rawValue)
+            // Rating is the key ranking signal — kept immediately after the time range
+            // so it reads right after the header in the scan order.
             RatingBadge(label: slot.label)
             if interactive {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
                     .rotationEffect(.degrees(expanded ? 180 : 0))
-                    .animation(.easeInOut(duration: 0.2), value: expanded)
+                    .animation(reduceMotion ? nil : Motion.quick(), value: expanded)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -121,9 +129,12 @@ struct SlotCard: View {
 
     @ViewBuilder
     private var expandedActions: some View {
-        Divider().background(Color.white.opacity(0.15)).padding(.vertical, 8)
+        Divider()
+            .background(Color.white.opacity(0.15))
+            .padding(.vertical, MeridianSpacing.sm.rawValue)
+            .accessibilityHidden(true)
 
-        HStack(spacing: 8) {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
             actionButton(
                 title: addedToCalendar ? "Added" : "Calendar",
                 systemImage: addedToCalendar ? "checkmark.circle.fill" : "calendar.badge.plus",
@@ -150,10 +161,21 @@ struct SlotCard: View {
         if let calendarError {
             Text(calendarError)
                 .font(.labelMedium)
-                .foregroundStyle(Color.red.opacity(0.85))
+                .foregroundStyle(MeridianColors.error.opacity(0.85))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isStaticText)
         }
+    }
+
+    /// Named surface constants for the primary-tinted CTA so the filled and outlined
+    /// variants stay visually identical to their siblings (CalendarEventsCard / WindowCard),
+    /// instead of repeating the raw `0.12` fill / `0.3` border literals inline.
+    private enum ActionButtonSurface {
+        static let outlinedFillOpacity: Double = 0.12
+        static let outlinedBorderOpacity: Double = 0.3
+        /// Meets the 44 pt iOS minimum touch target even at the default type size.
+        static let minHeight: CGFloat = 44
     }
 
     private func actionButton(
@@ -163,23 +185,31 @@ struct SlotCard: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: systemImage).font(.system(size: 15, weight: .semibold))
+            HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text(title).font(.titleMedium)
             }
             .foregroundStyle(filled ? MeridianColors.onPrimary : MeridianColors.primary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: ActionButtonSurface.minHeight)
+            .padding(.vertical, MeridianSpacing.md.rawValue)
             .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(filled ? MeridianColors.primary : MeridianColors.primary.opacity(0.12))
+                let shape = RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                shape
+                    .fill(filled
+                        ? MeridianColors.primary
+                        : MeridianColors.primary.opacity(ActionButtonSurface.outlinedFillOpacity))
                     .overlay {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(MeridianColors.primary.opacity(filled ? 0 : 0.3), lineWidth: 1)
+                        shape.strokeBorder(
+                            MeridianColors.primary.opacity(filled ? 0 : ActionButtonSurface.outlinedBorderOpacity),
+                            lineWidth: 1
+                        )
                     }
             }
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Actions
@@ -235,7 +265,7 @@ struct SlotCard: View {
         let text = "\(title) on \(localDate): \(localTime) (You · \(localLocationName)) / "
             + parts.joined(separator: " / ")
         UIPasteboard.general.string = text
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { copied = true }
+        withAnimation(reduceMotion ? nil : Motion.bouncy()) { copied = true }
     }
 
     // MARK: - Rating color
@@ -244,7 +274,7 @@ struct SlotCard: View {
         switch label {
         case .optimal:   return MeridianColors.primary
         case .fair:      return MeridianColors.daylightGlow
-        case .difficult: return Color.red
+        case .difficult: return MeridianColors.error
         }
     }
 
@@ -330,6 +360,7 @@ struct ParticipantTag: View {
             Image(systemName: style.systemImage)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(style.color)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 0) {
                 primaryLine
                 Text(style.label)
@@ -337,9 +368,26 @@ struct ParticipantTag: View {
                     .foregroundStyle(style.color)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, MeridianSpacing.sm.rawValue)
+        .padding(.vertical, MeridianSpacing.xs.rawValue)
         .background { Capsule().fill(style.color.opacity(0.14)) }
+        // Read as one stop — "Alex, 2:00 PM, +1 d, Working" — instead of icon + name
+        // + offset + status announced piecemeal.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    /// Combined VoiceOver summary: who, their local time, an optional day offset, and the
+    /// LocalView status word, spoken as a single grouped element.
+    private var accessibilityLabel: String {
+        var parts = ["\(who), \(time)"]
+        if dayOffset != 0 {
+            let days = abs(dayOffset)
+            let noun = days == 1 ? "day" : "days"
+            parts.append(dayOffset > 0 ? "\(days) \(noun) ahead" : "\(days) \(noun) behind")
+        }
+        parts.append(style.label)
+        return parts.joined(separator: ", ")
     }
 
     private var primaryLine: Text {
@@ -375,7 +423,7 @@ struct LocalViewStyle {
         case .outsideHours:
             return LocalViewStyle(systemImage: "cup.and.saucer.fill", label: "Off-hours", color: MeridianColors.secondary)
         case .asleep:
-            return LocalViewStyle(systemImage: "moon.fill", label: "Asleep", color: Color.red)
+            return LocalViewStyle(systemImage: "moon.fill", label: "Asleep", color: MeridianColors.error)
         }
     }
 }

@@ -1,0 +1,436 @@
+# =============================================================================
+# Meridian — Application Semantic Layer
+# =============================================================================
+# A data-model semantic layer over Meridian's *own* domain (the local Room /
+# SQLite database), authored so an LLM / AI data-agent can translate natural
+# language into correct structured queries — not a semantic layer over the repo.
+#
+# Format: Cube (https://cube.dev) YAML schema. Cube is used here as a portable,
+# AI-oriented modelling notation; the same model maps cleanly to dbt semantic
+# models or LookML. Every `sql` / `sql_table` reference matches the real Room
+# entity columns (see /semantic/README.md for the schema-to-model mapping).
+#
+# Source of truth for columns:
+#   saved_zones   -> app/.../core/data/SavedZone.kt
+#   people        -> app/.../core/data/Person.kt
+#   planned_tasks -> app/.../core/data/PlannedTask.kt
+#
+# CONFORMED DIMENSION: `zone` (IANA time-zone id) is shared by all three tables
+# via zones.id = people.zoneId = planned_tasks.zoneId. Join *through* zones;
+# never join people <-> tasks directly (see the "chasm trap" note in views).
+# =============================================================================
+
+cubes:
+  # ---------------------------------------------------------------------------
+  # ZONES — the canonical registry of time zones the user has pinned.
+  # Grain: one row per pinned IANA zone.
+  # ---------------------------------------------------------------------------
+  - name: zones
+    sql_table: saved_zones
+    title: "Saved Zones"
+    description: >
+      Time zones the user has pinned to their world clock. The primary key `id`
+      is an IANA time-zone identifier (e.g. "America/Los_Angeles") and is the
+      conformed key that people and tasks reference. Note: people and tasks may
+      reference a zone that is NOT pinned here, so joins from those cubes are
+      LEFT joins and can produce a null zone (an "orphan zone").
+    meta:
+      synonyms: ["time zones", "clocks", "cities", "locations", "world clock", "pinned zones"]
+
+    joins:
+      - name: people
+        relationship: one_to_many
+        sql: "{CUBE}.id = {people}.zoneId"
+      - name: tasks
+        relationship: one_to_many
+        sql: "{CUBE}.id = {tasks}.zoneId"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: string
+        primary_key: true
+        title: "IANA Zone ID"
+        description: "IANA time-zone identifier, e.g. 'Europe/London'. The conformed join key."
+        meta:
+          synonyms: ["timezone", "tz", "zone id", "iana id", "olson id"]
+          sample_values: ["America/Los_Angeles", "Asia/Kolkata", "Europe/London"]
+
+      - name: display_name
+        sql: displayName
+        type: string
+        title: "City / Label"
+        description: "Human city label chosen by the user, e.g. 'San Francisco'. Distinct from the IANA id."
+        meta:
+          synonyms: ["city", "place", "name", "label", "location name"]
+
+      - name: is_home
+        sql: isHome
+        type: boolean
+        title: "Is Home Zone"
+        description: "True for the single zone marked as the user's home / local reference clock."
+        meta:
+          synonyms: ["home", "local", "my zone", "home clock"]
+
+      - name: anchor_role
+        sql: anchorRole
+        type: string
+        title: "Now-card Anchor Role"
+        description: >
+          Which pinned slot this zone occupies on the Now card. One of:
+          '' (none / watchlist-only), 'home_country' (origin country),
+          'residence' (usual base / campus / apartment).
+        meta:
+          synonyms: ["role", "anchor", "pin slot", "now slot"]
+          allowed_values: ["", "home_country", "residence"]
+
+      - name: order_index
+        sql: orderIndex
+        type: number
+        title: "Sort Order"
+        description: "User-defined ordering on the world-clock list (ascending)."
+        meta:
+          synonyms: ["order", "position", "sort order"]
+
+      - name: is_favorite
+        sql: isFavorite
+        type: boolean
+        title: "Is Favorite"
+        description: "Whether the user starred this zone."
+        meta:
+          synonyms: ["favorite", "starred", "pinned favorite"]
+
+    measures:
+      - name: count
+        type: count
+        title: "Number of Saved Zones"
+        description: "Count of pinned time zones."
+        meta:
+          synonyms: ["how many zones", "number of clocks", "zone count"]
+
+      - name: favorite_count
+        type: count
+        title: "Favorite Zones"
+        filters:
+          - sql: "{CUBE}.isFavorite = 1"
+
+      - name: home_country_count
+        type: count
+        title: "Home-country Anchors"
+        filters:
+          - sql: "{CUBE}.anchorRole = 'home_country'"
+
+      - name: residence_count
+        type: count
+        title: "Residence Anchors"
+        filters:
+          - sql: "{CUBE}.anchorRole = 'residence'"
+
+  # ---------------------------------------------------------------------------
+  # PEOPLE — contacts you plan meetings with, each carrying a zone + work window.
+  # Grain: one row per contact.
+  # ---------------------------------------------------------------------------
+  - name: people
+    sql_table: people
+    title: "People"
+    description: >
+      Contacts the user schedules across. Each person carries an IANA zone and a
+      local working window [work_start_hour, work_end_hour) plus an optional
+      do-not-disturb window, which feed the meeting-fairness ranker.
+    meta:
+      synonyms: ["contacts", "teammates", "participants", "colleagues", "friends", "attendees"]
+
+    joins:
+      - name: zones
+        relationship: many_to_one
+        sql: "{CUBE}.zoneId = {zones}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+        title: "Person ID"
+
+      - name: name
+        sql: name
+        type: string
+        title: "Name"
+        description: "Contact's display name, e.g. 'Priya'."
+        meta:
+          synonyms: ["contact name", "person", "who"]
+
+      - name: zone_id
+        sql: zoneId
+        type: string
+        title: "IANA Zone ID"
+        description: "The person's IANA time zone. Conformed key -> zones.id (many people : one zone)."
+        meta:
+          synonyms: ["timezone", "tz", "their zone", "where they are"]
+
+      - name: location_name
+        sql: locationName
+        type: string
+        title: "City / Place"
+        description: "Free-text city label, e.g. 'El Paso'. May differ from the IANA zone segment."
+        meta:
+          synonyms: ["city", "place", "location", "town"]
+
+      - name: work_start_hour
+        sql: workStartHour
+        type: number
+        title: "Work Start Hour"
+        description: "Local hour their working window opens (0-23, default 9)."
+        meta:
+          synonyms: ["start of work", "office start", "work begins"]
+
+      - name: work_end_hour
+        sql: workEndHour
+        type: number
+        title: "Work End Hour"
+        description: "Local hour their working window closes, exclusive (0-23, default 17)."
+        meta:
+          synonyms: ["end of work", "office end", "work ends"]
+
+      # Derived: length of the working window in hours, tolerant of midnight wrap.
+      - name: work_window_hours
+        sql: >
+          CASE WHEN {CUBE}.workEndHour > {CUBE}.workStartHour
+               THEN {CUBE}.workEndHour - {CUBE}.workStartHour
+               ELSE 24 - {CUBE}.workStartHour + {CUBE}.workEndHour END
+        type: number
+        title: "Working Window Length (h)"
+        description: "Hours in the working window; wraps past midnight when end <= start."
+
+      - name: has_dnd
+        sql: "CASE WHEN {CUBE}.dndStartHour >= 0 AND {CUBE}.dndEndHour >= 0 THEN 1 ELSE 0 END"
+        type: boolean
+        title: "Has Do-Not-Disturb"
+        description: "True when a do-not-disturb window is configured (dndStart/dndEnd both >= 0)."
+        meta:
+          synonyms: ["dnd", "quiet hours", "do not disturb"]
+
+      - name: is_favorite
+        sql: isFavorite
+        type: boolean
+        title: "Is Favorite"
+        meta:
+          synonyms: ["favorite", "starred", "close contact"]
+
+    measures:
+      - name: count
+        type: count
+        title: "Number of People"
+        meta:
+          synonyms: ["how many contacts", "number of people", "headcount"]
+
+      - name: favorite_count
+        type: count
+        title: "Favorite People"
+        filters:
+          - sql: "{CUBE}.isFavorite = 1"
+
+      - name: distinct_zone_count
+        sql: zoneId
+        type: count_distinct
+        title: "Distinct Zones Represented"
+        description: "How many distinct time zones the contacts span — the spread a meeting must cover."
+        meta:
+          synonyms: ["timezones covered", "zone spread", "how many timezones"]
+
+      - name: avg_work_start
+        sql: workStartHour
+        type: avg
+        title: "Avg Work Start Hour"
+
+      - name: avg_work_end
+        sql: workEndHour
+        type: avg
+        title: "Avg Work End Hour"
+
+  # ---------------------------------------------------------------------------
+  # TASKS — scheduled events on the planner timeline.
+  # Grain: one row per planned task.
+  # ---------------------------------------------------------------------------
+  - name: tasks
+    sql_table: planned_tasks
+    title: "Planned Tasks"
+    description: >
+      Events on the planner. `timestamp` is stored as epoch milliseconds and is
+      exposed as the `scheduled_at` time dimension (day/week/month/quarter/year
+      granularities). Rows with a non-null `origin` were imported from another
+      app and are never re-shared.
+    meta:
+      synonyms: ["events", "meetings", "reminders", "schedule", "planner items", "agenda"]
+
+    joins:
+      - name: zones
+        relationship: many_to_one
+        sql: "{CUBE}.zoneId = {zones}.id"
+
+    dimensions:
+      - name: id
+        sql: id
+        type: number
+        primary_key: true
+        title: "Task ID"
+
+      - name: title
+        sql: title
+        type: string
+        title: "Title"
+        description: "The event's title, e.g. 'Lunch with Emma'."
+        meta:
+          synonyms: ["event name", "what", "subject", "summary"]
+
+      # Epoch-millis INTEGER -> real timestamp for granularity roll-ups (SQLite).
+      - name: scheduled_at
+        sql: "datetime({CUBE}.timestamp / 1000, 'unixepoch')"
+        type: time
+        title: "Scheduled At"
+        description: "When the event occurs, derived from the epoch-millis `timestamp` column."
+        meta:
+          synonyms: ["when", "date", "time", "event time", "due"]
+          granularities: ["hour", "day", "week", "month", "quarter", "year"]
+
+      - name: zone_id
+        sql: zoneId
+        type: string
+        title: "IANA Zone ID"
+        description: "Zone the event is scheduled in. Conformed key -> zones.id (many tasks : one zone)."
+        meta:
+          synonyms: ["timezone", "tz", "where"]
+
+      - name: origin
+        sql: origin
+        type: string
+        title: "Import Source"
+        description: "Package name of the app this row was imported from, or null for native tasks."
+        meta:
+          synonyms: ["source", "imported from", "source app"]
+
+      - name: is_imported
+        sql: "CASE WHEN {CUBE}.origin IS NOT NULL THEN 1 ELSE 0 END"
+        type: boolean
+        title: "Is Imported"
+        description: "True when the task came from another app (origin is set); false for native tasks."
+        meta:
+          synonyms: ["imported", "external", "synced"]
+
+      - name: order_index
+        sql: orderIndex
+        type: number
+        title: "Sort Order"
+
+    measures:
+      - name: count
+        type: count
+        title: "Number of Tasks"
+        meta:
+          synonyms: ["how many events", "number of tasks", "event count"]
+
+      - name: upcoming_count
+        type: count
+        title: "Upcoming Tasks"
+        description: "Tasks scheduled at or after the current instant."
+        filters:
+          - sql: "{CUBE}.timestamp >= (CAST(strftime('%s','now') AS INTEGER) * 1000)"
+        meta:
+          synonyms: ["upcoming", "future events", "what's next", "coming up"]
+
+      - name: past_count
+        type: count
+        title: "Past Tasks"
+        filters:
+          - sql: "{CUBE}.timestamp < (CAST(strftime('%s','now') AS INTEGER) * 1000)"
+        meta:
+          synonyms: ["past", "previous events", "history"]
+
+      - name: imported_count
+        type: count
+        title: "Imported Tasks"
+        filters:
+          - sql: "{CUBE}.origin IS NOT NULL"
+
+      - name: native_count
+        type: count
+        title: "Native Tasks"
+        filters:
+          - sql: "{CUBE}.origin IS NULL"
+
+# =============================================================================
+# VIEWS — the safe, AI-facing consumption layer.
+# Agents should query VIEWS, not raw cubes: each view exposes exactly one
+# fan-out-safe join path so an LLM cannot accidentally build a chasm trap.
+# =============================================================================
+views:
+  # people + their zone attributes. many_to_one join => no fan-out.
+  - name: people_directory
+    description: >
+      Contacts enriched with their pinned-zone attributes. Safe to filter/group
+      by zone city, favorite, work window. One row per person.
+    cubes:
+      - join_path: people
+        includes:
+          - name
+          - location_name
+          - work_start_hour
+          - work_end_hour
+          - work_window_hours
+          - has_dnd
+          - is_favorite
+          - count
+          - favorite_count
+          - distinct_zone_count
+      - join_path: people.zones
+        prefix: true
+        includes:
+          - display_name
+          - is_home
+          - anchor_role
+
+  # tasks + their zone attributes. many_to_one join => no fan-out.
+  - name: task_schedule
+    description: >
+      Planner events enriched with zone attributes and time granularities. Safe
+      to roll up scheduled_at by day/week/month/quarter/year. One row per task.
+    cubes:
+      - join_path: tasks
+        includes:
+          - title
+          - scheduled_at
+          - origin
+          - is_imported
+          - count
+          - upcoming_count
+          - past_count
+          - imported_count
+          - native_count
+      - join_path: tasks.zones
+        prefix: true
+        includes:
+          - display_name
+          - is_home
+
+  # zones only. Do NOT add people + tasks measures to one zone view: zones->people
+  # and zones->tasks are both one_to_many, so a triple join fans out and inflates
+  # counts (CHASM TRAP). Query people_count via people_directory and task_count
+  # via task_schedule instead, each grouped by zone.
+  - name: zone_registry
+    description: >
+      Pinned zones with their own attributes and measures only. To count people
+      or tasks per zone, group people_directory / task_schedule by zone —
+      never join both onto zones at once (chasm trap / double-counting).
+    cubes:
+      - join_path: zones
+        includes:
+          - id
+          - display_name
+          - is_home
+          - anchor_role
+          - is_favorite
+          - order_index
+          - count
+          - favorite_count
+          - home_country_count
+          - residence_count

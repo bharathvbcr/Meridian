@@ -23,9 +23,12 @@ struct BottomAccessory: View {
     let tab: MeridianTab
     /// Caller-side enable flag (e.g. accessory preference). Defaults to `true`.
     var enabled: Bool = true
+    /// When `true`, the parent positions the pill (e.g. `ContentView` overlay). Skips built-in padding.
+    var embedded: Bool = false
+    /// Optional tap handler — e.g. jump to the Plan tab.
+    var onTap: (() -> Void)? = nil
 
     @Environment(\.glassOpacity) private var glassOpacity
-    @Environment(\.glassEnabled) private var glassEnabled
     @Environment(\.reduceTransparencyOverride) private var reduceTransparency
 
     /// Tabs on which the accessory is suppressed (own glass chrome / scrubber owns the space).
@@ -55,10 +58,13 @@ struct BottomAccessory: View {
         Group {
             if visible, let task = next {
                 pill(for: task, now: now)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // Reduce-Motion collapses the slide-up to a plain cross-fade;
+                    // for a control that materializes unexpectedly, a gentle fade
+                    // is the WCAG-preferred substitute for the move choreography.
+                    .meridianTransition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: visible)
+        .meridianAnimation(Motion.snappy(), value: visible)
     }
 
     @ViewBuilder
@@ -66,35 +72,43 @@ struct BottomAccessory: View {
         let alphas = ScrubberGlass.alphas(opacity: glassOpacity)
         let countdown = CountdownFormatter.countdown(to: task.timestamp, now: now)
 
-        HStack(spacing: 0) {
+        let content = HStack(spacing: MeridianSpacing.sm.rawValue) {
             Image(systemName: "clock")
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: Self.iconSize, weight: .semibold))
                 .foregroundStyle(MeridianColors.primary)
+                .accessibilityHidden(true)
 
-            Spacer().frame(width: 10)
-
+            // Task name reads first — larger, semibold title rung.
             Text(task.title)
-                .font(.system(size: 12, weight: .bold))   // labelMedium + Bold
+                .font(.titleMedium)
                 .foregroundStyle(MeridianColors.onSurface)
                 .lineLimit(1)
+                .layoutPriority(1)
 
-            Spacer().frame(width: 8)
-
+            // Countdown is the supporting detail — a rung smaller, brand-tinted
+            // (informational, not an error). Fixed monospaced digits so the
+            // per-second tick doesn't jitter the layout.
             Text("in \(countdown)")
-                .font(.system(size: 12, weight: .semibold))   // labelMedium
-                .foregroundStyle(Color(hex: "FF6B6B"))         // error / countdown red
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.primary)
                 .monospacedDigit()
+                .accessibilityHidden(true)
+
+            if onTap != nil {
+                Image(systemName: "chevron.up")
+                    .font(.labelSmall)
+                    .foregroundStyle(MeridianColors.onSurfaceVariant)
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.vertical, MeridianSpacing.md.rawValue)
+        .frame(minHeight: Self.minHeight)
         .background {
-            // Solid scrim over the glass so the title + countdown stay legible,
-            // matching the time-scrubber pills.
             Capsule(style: .continuous)
-                .fill(MeridianColors.surface.opacity(alphas.pillTint))
+                .fill(MeridianColors.accessoryPillTint(opacity: glassOpacity))
         }
         .background {
-            // Frosted glass backing (or the milkier material per the frosted flag).
             if reduceTransparency {
                 Capsule(style: .continuous).fill(MeridianColors.surface)
             } else {
@@ -108,8 +122,50 @@ struct BottomAccessory: View {
                 .strokeBorder(MeridianColors.primary.opacity(0.4), lineWidth: 1)
         }
         .clipShape(Capsule(style: .continuous))
-        .padding(.horizontal, 24)
-        .padding(.bottom, 96)
+        .contentShape(Capsule())
+
+        Group {
+            if let onTap {
+                Button(action: onTap) { content }
+                    .buttonStyle(.plain)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(task.title), starting in \(countdown)")
+                    .accessibilityHint("Opens the planner")
+                    .accessibilityAddTraits([.isButton, .updatesFrequently])
+            } else {
+                content
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(task.title), starting in \(countdown)")
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
+        }
+        .modifier(EmbeddedPaddingModifier(embedded: embedded))
+    }
+
+    // MARK: - Layout constants
+
+    /// Icon point size, matched to the nav / scrubber pill convention (20).
+    private static let iconSize: CGFloat = ScrubberPillDefaults.iconSize
+    /// Minimum pill height — guarantees a >=44 pt (48 pt, matching the scrubber
+    /// pill) touch target and gives scaled Dynamic Type headroom before clipping.
+    private static let minHeight: CGFloat = ScrubberPillDefaults.minHeight
+}
+
+// MARK: - Embedded padding
+
+private struct EmbeddedPaddingModifier: ViewModifier {
+    let embedded: Bool
+
+    func body(content: Content) -> some View {
+        if embedded {
+            content
+        } else {
+            content
+                .padding(.horizontal, MeridianSpacing.xxl.rawValue)
+                // Clears the floating tab bar. Expressed on the spacing scale
+                // (24 x 4 = 96) rather than a bare literal.
+                .padding(.bottom, MeridianSpacing.xxl.rawValue * 4)
+        }
     }
 }
 

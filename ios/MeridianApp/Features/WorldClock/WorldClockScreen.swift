@@ -24,6 +24,9 @@ struct WorldClockScreen: View {
     @Environment(\.mainViewModel) private var injectedViewModel
     @Environment(TimeEngine.self) private var timeEngine
     @Environment(SettingsRepository.self) private var settingsRepo
+    @Environment(\.worldCityPickerRequest) private var worldCityPickerRequest
+    @Environment(\.tabBarInsetHeight) private var tabBarInsetHeight
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Scrub offset (seconds from live) bound to the TimelineScrubber and mirrored into the
     /// shared `TimeEngine.scrubInstant` so the whole app tracks the same instant.
@@ -68,6 +71,14 @@ struct WorldClockScreen: View {
         savedZones.filter { !$0.isNowAnchor }
     }
 
+    private var people: [Person] { viewModel?.people ?? [] }
+
+    /// Starred contacts whose zone is NOT pinned, grouped one row per IANA zone
+    /// (Android's "Contact locations" section; helper shared with the Now screen).
+    private var orphanContactGroups: [ContactLocationGroup] {
+        unassignedContactGroups(people: people, savedZones: savedZones)
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -88,14 +99,20 @@ struct WorldClockScreen: View {
                         watchlistRows
                     }
 
+                    if !orphanContactGroups.isEmpty {
+                        contactLocationsHeader
+                        contactLocationRows
+                    }
+
                     // Clearance so the last rows scroll above the pinned scrubber dial + tab bar.
                     Color.clear
-                        .frame(height: 180)
+                        .frame(height: tabBarInsetHeight + 84)
                         .plainRow()
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .environment(\.defaultMinListRowHeight, 0)
+                .coordinateSpace(name: "worldScroll")
 
                 scrubberOverlay
             }
@@ -104,6 +121,9 @@ struct WorldClockScreen: View {
         }
         .onAppear {
             scrubOffsetSeconds = timeEngine.scrubInstant.map { $0.timeIntervalSince(timeEngine.now()) } ?? 0
+            // Pick up a fresher cached fix so the home pin tracks the user across sessions.
+            viewModel?.refreshDeviceCoordinate()
+            consumeWorldCityPickerRequestIfNeeded()
         }
         .onReceive(ticker) { now in
             if timeEngine.scrubInstant == nil { liveTick = now }
@@ -115,6 +135,9 @@ struct WorldClockScreen: View {
             } else {
                 viewModel?.selectScrubTime(timeEngine.now().addingTimeInterval(newValue))
             }
+        }
+        .onChange(of: worldCityPickerRequest.wrappedValue) { _, pending in
+            if pending { consumeWorldCityPickerRequestIfNeeded() }
         }
         .sheet(isPresented: $showCityPicker) {
             if let viewModel {
@@ -130,17 +153,23 @@ struct WorldClockScreen: View {
     // MARK: - Sections
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.xs.rawValue) {
+            MeridianWordmark()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, MeridianSpacing.sm.rawValue)
+                .accessibilityHidden(true)
             Text("World Clock")
                 .font(.displayMedium)
                 .foregroundStyle(MeridianColors.onBackground)
+                .accessibilityAddTraits(.isHeader)
             Text("Search locations and scrub time across zones.")
                 .font(.bodyMedium)
                 .foregroundStyle(MeridianColors.onBackground.opacity(0.6))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.top, MeridianSpacing.xs.rawValue)
+        .reportScrollOffset(in: "worldScroll")
         .plainRow()
     }
 
@@ -148,88 +177,77 @@ struct WorldClockScreen: View {
         WorldVisualization(
             instant: displayInstant,
             zoneIds: savedZones.map(\.id),
-            mapStyle: settings.mapStyle
+            mapStyle: settings.mapStyle,
+            homeZoneId: savedZones.first(where: \.isHome)?.id,
+            homeLocation: viewModel?.homeLocation
         )
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.vertical, MeridianSpacing.sm.rawValue)
         .plainRow()
     }
 
     private var searchCard: some View {
-        GlassCard(cornerRadius: 20, padding: 16) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
+        // The screen header already explains "Search locations and scrub time across zones,"
+        // and the picker sheet repeats it a third time — so the card carries just the action.
+        GlassCard(cornerRadius: MeridianRadius.medium.rawValue, padding: MeridianSpacing.lg.rawValue) {
+            Button {
+                showCityPicker = true
+            } label: {
+                HStack(spacing: MeridianSpacing.sm.rawValue) {
                     Image(systemName: "globe")
-                        .foregroundStyle(MeridianColors.primary)
-                        .frame(width: 20, height: 20)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Add Worldwide Cities")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(MeridianColors.onSurface)
-                        Text("Search any city, airport, or time zone to pin its time.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
-                    }
-                    Spacer(minLength: 0)
+                    Text("Search worldwide cities")
                 }
-
-                Button {
-                    showCityPicker = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                        Text("Search worldwide cities")
-                    }
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(MeridianColors.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(MeridianColors.primary.opacity(0.5), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-                .sensoryFeedback(.impact(weight: .light), trigger: showCityPicker)
+                .font(.titleMedium)
+                .foregroundStyle(MeridianColors.primary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .padding(.vertical, MeridianSpacing.md.rawValue)
+                .background(
+                    RoundedRectangle(cornerRadius: MeridianRadius.small.rawValue, style: .continuous)
+                        .strokeBorder(MeridianColors.primary.opacity(0.5), lineWidth: 1)
+                )
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Search worldwide cities")
+            .accessibilityHint("Opens a picker to add a city, airport, or time zone")
+            .accessibilityAddTraits(.isButton)
+            .sensoryFeedback(.impact(weight: .light), trigger: showCityPicker)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.vertical, MeridianSpacing.sm.rawValue)
         .plainRow()
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "globe")
-                .font(.system(size: 56, weight: .light))
-                .foregroundStyle(MeridianColors.primary.opacity(0.5))
-            Text("No pinned locations yet")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(MeridianColors.onSurface)
-            Text("Search and add cities above to track their times across the globe.")
-                .font(.bodyMedium)
-                .foregroundStyle(MeridianColors.onSurfaceVariant)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(48)
+        EmptyStateCard(
+            icon: "globe",
+            title: "No pinned locations yet",
+            message: "Search and add cities to track their times across the globe.",
+            actionLabel: "Search cities",
+            action: { showCityPicker = true }
+        )
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
+        .padding(.vertical, MeridianSpacing.sm.rawValue)
         .plainRow()
     }
 
     private var pinnedLocationsHeader: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
             Image(systemName: "globe")
                 .foregroundStyle(MeridianColors.primary)
                 .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
             Text("Pinned Locations")
                 .font(.titleLarge)
                 .foregroundStyle(MeridianColors.onBackground)
+                .accessibilityAddTraits(.isHeader)
             Rectangle()
                 .fill(MeridianColors.onBackground.opacity(0.12))
                 .frame(height: 1)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 12)
+        .padding(.horizontal, MeridianSpacing.xxl.rawValue)
+        .padding(.vertical, MeridianSpacing.md.rawValue)
         .plainRow()
     }
 
@@ -250,21 +268,85 @@ struct WorldClockScreen: View {
         .onMove(perform: moveWatchlist)
     }
 
+    private var contactLocationsHeader: some View {
+        HStack(spacing: MeridianSpacing.sm.rawValue) {
+            Image(systemName: "person.2")
+                .foregroundStyle(MeridianColors.primary)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+            Text("Contact locations")
+                .font(.titleLarge)
+                .foregroundStyle(MeridianColors.onBackground)
+                .accessibilityAddTraits(.isHeader)
+            Rectangle()
+                .fill(MeridianColors.onBackground.opacity(0.12))
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, MeridianSpacing.xxl.rawValue)
+        .padding(.vertical, MeridianSpacing.md.rawValue)
+        .plainRow()
+    }
+
+    /// One read-mostly row per orphan-contact zone. `contactOnlyLocation` hides the
+    /// favorite / set-home / remove actions — the zone isn't pinned, only its people are.
+    @ViewBuilder
+    private var contactLocationRows: some View {
+        ForEach(orphanContactGroups) { group in
+            ZoneComparisonRow(
+                displayName: group.displayName,
+                zoneId: group.zoneId,
+                instant: displayInstant,
+                use24Hour: use24Hour,
+                workStartHour: settings.defaultWorkStartHour,
+                workEndHour: settings.defaultWorkEndHour,
+                contacts: group.people,
+                contactOnlyLocation: true,
+                onAddContact: { name in
+                    viewModel?.addPerson(
+                        name: name,
+                        zoneId: group.zoneId,
+                        locationName: group.displayName,
+                        isFavorite: true
+                    )
+                },
+                onRemoveContact: { viewModel?.deletePerson($0) },
+                onToggleContactFavorite: { viewModel?.togglePersonFavorite($0) }
+            )
+            .padding(.horizontal, MeridianSpacing.lg.rawValue)
+            .padding(.vertical, 6)
+            .plainRow()
+        }
+    }
+
     // MARK: - Row builder
 
     private func zoneRow(_ zone: SavedZone) -> some View {
         ZoneComparisonRow(
-            zone: zone,
+            displayName: zone.displayName,
+            zoneId: zone.id,
             instant: displayInstant,
             use24Hour: use24Hour,
+            isHome: zone.isHome,
+            isFavoriteZone: zone.isFavorite,
             workStartHour: settings.defaultWorkStartHour,
             workEndHour: settings.defaultWorkEndHour,
-            favoriteContacts: favoriteContacts(for: zone),
+            contacts: contactsForZone(zone, people: people, savedZones: savedZones),
+            onAddContact: { name in
+                viewModel?.addPerson(
+                    name: name,
+                    zoneId: zone.id,
+                    locationName: zone.displayName,
+                    isFavorite: true
+                )
+            },
+            onRemoveContact: { viewModel?.deletePerson($0) },
+            onToggleContactFavorite: { viewModel?.togglePersonFavorite($0) },
             onSetHome: { viewModel?.setHomeZone(id: zone.id, displayName: zone.displayName) },
-            onToggleFavorite: { viewModel?.toggleZoneFavorite(id: zone.id) },
+            onToggleZoneFavorite: { viewModel?.toggleZoneFavorite(id: zone.id) },
             onDelete: { viewModel?.removeZone(id: zone.id) }
         )
-        .padding(.horizontal, 16)
+        .padding(.horizontal, MeridianSpacing.lg.rawValue)
         .padding(.vertical, 6)
     }
 
@@ -279,13 +361,6 @@ struct WorldClockScreen: View {
         viewModel?.reorderZones(ids: ids)
     }
 
-    // MARK: - Contacts
-
-    /// Favorite contacts pinned to this zone (matching Android's favorite-contact chips).
-    private func favoriteContacts(for zone: SavedZone) -> [Person] {
-        (viewModel?.people ?? []).filter { $0.isFavorite && $0.tzId == zone.id }
-    }
-
     // MARK: - Scrubber overlay
 
     private var scrubberOverlay: some View {
@@ -296,16 +371,28 @@ struct WorldClockScreen: View {
                 TimelineScrubber(offsetSeconds: $scrubOffsetSeconds)
                 if abs(scrubOffsetSeconds) >= 1 {
                     Button("Reset to Live") {
-                        withAnimation(Motion.snappy()) { scrubOffsetSeconds = 0 }
+                        withAnimation(reduceMotion ? nil : Motion.snappy()) { scrubOffsetSeconds = 0 }
                     }
                     .font(.labelMedium)
                     .foregroundStyle(MeridianColors.primary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                    .accessibilityHint("Return the timeline to the current time")
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, MeridianSpacing.lg.rawValue)
+            // Lift the dial clear of the floating glass tab bar that ContentView overlays on top
+            // (otherwise the pinned scrubber renders underneath it and looks "missing").
+            .padding(.bottom, tabBarInsetHeight)
             .background(.clear)
         }
+    }
+
+    /// Handles `meridian://addzone` and widget empty-state deep links.
+    private func consumeWorldCityPickerRequestIfNeeded() {
+        guard worldCityPickerRequest.wrappedValue else { return }
+        showCityPicker = true
+        worldCityPickerRequest.wrappedValue = false
     }
 }
 
@@ -322,29 +409,62 @@ private extension View {
     }
 }
 
+// MARK: - ZoneCardButtonStyle
+
+/// Pressed-state feedback for the expandable zone card: a subtle scale + dim while the finger
+/// is down, springing back on release (`Motion.quick()`), gated on Reduce Motion. Gives the
+/// large tap target a touch response before the expand panel animates.
+private struct ZoneCardButtonStyle: ButtonStyle {
+    var reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.92 : 1)
+            .animation(reduceMotion ? nil : Motion.quick(), value: configuration.isPressed)
+    }
+}
+
 // MARK: - ZoneComparisonRow
 
 /// A single expandable zone card: name + day/night icon + favorite/home markers, the local
 /// time + date, a working-hours / off-hours sub-label, the UTC offset, favorite-contact
 /// chips, and a sun-times line. Tapping toggles an expanded panel (work window, zone id,
-/// contacts). A context menu surfaces favorite / set-home / remove (Android's options menu).
+/// contacts with add / star / remove). A context menu surfaces favorite / add-contact /
+/// set-home / remove (Android's options menu). Takes plain values instead of a `SavedZone`
+/// so the "Contact locations" section can render orphan-contact groups with the same row.
 struct ZoneComparisonRow: View {
 
-    let zone: SavedZone
+    let displayName: String
+    let zoneId: String
     let instant: Date
     let use24Hour: Bool
+    var isHome: Bool = false
+    var isFavoriteZone: Bool = false
     var workStartHour: Int = 9
     var workEndHour: Int = 17
-    var favoriteContacts: [Person] = []
+    /// Contacts that appear on this row; chips + the expanded list show the starred ones.
+    var contacts: [Person] = []
+    /// Zone isn't pinned (orphan-contact group): hide favorite / set-home / remove actions.
+    var contactOnlyLocation: Bool = false
+    var onAddContact: (String) -> Void = { _ in }
+    var onRemoveContact: (Person) -> Void = { _ in }
+    var onToggleContactFavorite: (Person) -> Void = { _ in }
     var onSetHome: () -> Void = {}
-    var onToggleFavorite: () -> Void = {}
+    var onToggleZoneFavorite: () -> Void = {}
     var onDelete: () -> Void = {}
 
     @State private var expanded = false
+    @State private var showAddContact = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: Computed
 
-    private var timeZone: TimeZone { TimeFormats.safeTimeZone(id: zone.id) }
+    private var timeZone: TimeZone { TimeFormats.safeTimeZone(id: zoneId) }
+
+    /// Android shows only starred contacts on the row (chips and expanded list alike).
+    private var favoriteContacts: [Person] { contacts.filter(\.isFavorite) }
 
     private var localHour: Int {
         var cal = Calendar(identifier: .gregorian)
@@ -357,7 +477,7 @@ struct ZoneComparisonRow: View {
     }
 
     private var isDaylight: Bool {
-        let c = ZoneGeo.coordinate(for: zone.id, at: instant)
+        let c = ZoneGeo.coordinate(for: zoneId, at: instant)
         return SolarMath.isDaylight(latitude: c.latitude, longitude: c.longitude, date: instant)
     }
 
@@ -366,11 +486,31 @@ struct ZoneComparisonRow: View {
     }
 
     private var localDate: String {
-        TimeFormats.shortDate(date: instant, timeZoneId: zone.id)
+        TimeFormats.shortDate(date: instant, timeZoneId: zoneId)
     }
 
     private var utcOffset: String {
-        TimeFormats.utcOffset(for: zone.id, at: instant)
+        TimeFormats.utcOffset(for: zoneId, at: instant)
+    }
+
+    /// Folds the row's scattered glyphs (name, time, working-hours, day/night, home, favorite)
+    /// into one spoken summary so VoiceOver reads the card as a single meaningful element
+    /// instead of stopping on each decorative marker.
+    private var accessibilitySummary: String {
+        var parts: [String] = [displayName, localTime]
+        parts.append(isWorkingHours ? "Working hours" : "Off-hours")
+        parts.append(isDaylight ? "Daytime" : "Nighttime")
+        if isHome { parts.append("Home zone") }
+        if isFavoriteZone { parts.append("Favorite") }
+        if !favoriteContacts.isEmpty {
+            parts.append("\(favoriteContacts.count) starred \(favoriteContacts.count == 1 ? "contact" : "contacts")")
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Expand/collapse spring, gated on Reduce Motion (no user-facing tween otherwise).
+    private var expandAnimation: Animation? {
+        reduceMotion ? nil : Motion.smooth()
     }
 
     private var containerTint: Color {
@@ -382,35 +522,51 @@ struct ZoneComparisonRow: View {
         (isDaylight ? MeridianColors.daylightGlow : MeridianColors.nightGlow).opacity(0.22)
     }
 
+    /// Card corner, shared by fill, clip, and stroke so they never drift out of sync.
+    private var cardCornerRadius: CGFloat { MeridianRadius.medium.rawValue }
+
     // MARK: Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            mainRow
-            if expanded { expandedPanel }
+        // A Button (not a bare .onTapGesture) so the card gets a real pressed affordance via
+        // `ZoneCardButtonStyle`, and still coexists cleanly with List scrolling + contextMenu.
+        Button {
+            withAnimation(expandAnimation) { expanded.toggle() }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                mainRow
+                if expanded { expandedPanel }
+            }
+            .padding(MeridianSpacing.lg.rawValue)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(cardBackground)
+            .clipShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous))
         }
-        .padding(16)
-        .background(cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-        )
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(Motion.smooth()) { expanded.toggle() }
-        }
+        .buttonStyle(ZoneCardButtonStyle(reduceMotion: reduceMotion))
         .sensoryFeedback(.selection, trigger: expanded)
         .contextMenu { contextMenuItems }
-        .animation(Motion.snappy(), value: isWorkingHours)
-        .animation(Motion.snappy(), value: isDaylight)
+        .animation(reduceMotion ? nil : Motion.snappy(), value: isWorkingHours)
+        .animation(reduceMotion ? nil : Motion.snappy(), value: isDaylight)
+        // Keep the expanded panel's own buttons individually reachable; the summary lives on
+        // `mainRow` (the tappable header), which is combined into one element there.
+        .accessibilityElement(children: .contain)
+        .sheet(isPresented: $showAddContact) {
+            AddContactToZoneSheet(zoneName: displayName) { name in
+                onAddContact(name)
+            }
+        }
     }
 
     private var cardBackground: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial.opacity(0.6))
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
                 .fill(containerTint)
             // Day/night corner glow (Android drawBehind radial gradient).
             RadialGradient(
@@ -425,45 +581,48 @@ struct ZoneComparisonRow: View {
     // MARK: Main row
 
     private var mainRow: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: MeridianSpacing.md.rawValue) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(zone.displayName)
+                HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
+                    Text(displayName)
                         .font(.titleMedium)
                         .foregroundStyle(MeridianColors.onSurface)
                         .lineLimit(1)
-                    if zone.isFavorite {
+                    if isFavoriteZone {
                         Image(systemName: "star.fill")
-                            .font(.system(size: 11))
+                            .font(.labelMedium)
                             .foregroundStyle(MeridianColors.daylightGlow)
+                            .accessibilityHidden(true)
                     }
                     Image(systemName: isDaylight ? "sun.max.fill" : "moon.stars.fill")
-                        .font(.system(size: 12))
+                        .font(.labelMedium)
                         .foregroundStyle(isDaylight ? MeridianColors.daylightAccent
                                                     : MeridianColors.nightAccent)
-                    if zone.isHome {
+                        .accessibilityHidden(true)
+                    if isHome {
                         Image(systemName: "house.fill")
-                            .font(.system(size: 11))
+                            .font(.labelMedium)
                             .foregroundStyle(MeridianColors.primary)
+                            .accessibilityHidden(true)
                     }
                 }
 
                 Text(isWorkingHours ? "Working hours" : "Off-hours")
-                    .font(.system(size: 12))
+                    .font(.labelMedium)
                     .foregroundStyle(isWorkingHours ? MeridianColors.primary.opacity(0.9)
                                                     : MeridianColors.onSurface.opacity(0.55))
 
                 Text(utcOffset)
-                    .font(.system(size: 10))
+                    .font(.labelMedium)
                     .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(0.7))
 
                 if !favoriteContacts.isEmpty {
                     contactChips
-                        .padding(.top, 4)
+                        .padding(.top, MeridianSpacing.xs.rawValue)
                 }
 
                 SunTimesLine(
-                    zoneId: zone.id,
+                    zoneId: zoneId,
                     instant: instant,
                     use24Hour: use24Hour,
                     textColor: MeridianColors.onSurface
@@ -473,35 +632,46 @@ struct ZoneComparisonRow: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {
-                HStack(spacing: 4) {
+                HStack(spacing: MeridianSpacing.xs.rawValue) {
                     Text(localTime)
                         .font(.system(size: 24, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(MeridianColors.primary)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.onSurfaceVariant.opacity(0.5))
                         .rotationEffect(.degrees(expanded ? 180 : 0))
+                        .accessibilityHidden(true)
                 }
                 Text(localDate)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.labelMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
             }
+        }
+        // Fold every glyph + label above into one spoken element with a synthesized summary.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityHint(expanded ? "Double tap to collapse" : "Double tap to expand")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            withAnimation(expandAnimation) { expanded.toggle() }
         }
     }
 
     private var contactChips: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: MeridianSpacing.xs.rawValue) {
             ForEach(favoriteContacts) { person in
                 HStack(spacing: 3) {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 8))
+                        .font(.labelMedium)
+                        .imageScale(.small)
                         .foregroundStyle(MeridianColors.daylightGlow)
+                        .accessibilityHidden(true)
                     Text(person.name)
-                        .font(.system(size: 10))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.85))
                 }
-                .padding(.horizontal, 7)
+                .padding(.horizontal, MeridianSpacing.sm.rawValue)
                 .padding(.vertical, 2)
                 .background(Capsule().fill(MeridianColors.primary.opacity(0.12)))
             }
@@ -511,28 +681,29 @@ struct ZoneComparisonRow: View {
     // MARK: Expanded panel
 
     private var expandedPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: MeridianSpacing.sm.rawValue) {
             Rectangle()
                 .fill(MeridianColors.onSurface.opacity(0.12))
                 .frame(height: 1)
-                .padding(.top, 10)
+                .padding(.top, MeridianSpacing.sm.rawValue)
+                .accessibilityHidden(true)
 
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Work window")
-                        .font(.system(size: 11))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
                     Text(String(format: "%02d:00 – %02d:00", workStartHour, workEndHour))
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.bodyMedium.weight(.bold))
                         .foregroundStyle(MeridianColors.onSurface)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("Zone ID")
-                        .font(.system(size: 11))
+                        .font(.labelMedium)
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.5))
-                    Text(zone.id)
-                        .font(.system(size: 12, weight: .bold))
+                    Text(zoneId)
+                        .font(.bodyMedium.weight(.bold))
                         .foregroundStyle(MeridianColors.onSurface.opacity(0.6))
                 }
             }
@@ -540,57 +711,120 @@ struct ZoneComparisonRow: View {
             Rectangle()
                 .fill(MeridianColors.onSurface.opacity(0.10))
                 .frame(height: 1)
+                .accessibilityHidden(true)
 
-            HStack(spacing: 4) {
+            HStack(spacing: MeridianSpacing.xs.rawValue) {
                 Image(systemName: "person.2.fill")
-                    .font(.system(size: 12))
+                    .font(.labelMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
+                    .accessibilityHidden(true)
                 Text("Contacts")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.bodyMedium.weight(.bold))
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.7))
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Button {
+                    showAddContact = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "person.badge.plus")
+                        Text("Add")
+                    }
+                    .font(.labelMedium)
+                    .foregroundStyle(MeridianColors.primary)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add contact to \(displayName)")
+                .accessibilityAddTraits(.isButton)
             }
 
             if favoriteContacts.isEmpty {
-                Text("No starred contacts — star someone to include them in Plan")
-                    .font(.system(size: 12))
+                Text("No starred contacts — tap Add or star someone to keep them at a glance.")
+                    .font(.bodyMedium)
                     .foregroundStyle(MeridianColors.onSurface.opacity(0.4))
             } else {
                 ForEach(favoriteContacts) { person in
-                    HStack(spacing: 6) {
-                        Image(systemName: "person.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(MeridianColors.onSurface.opacity(0.4))
-                        Text(person.name)
-                            .font(.system(size: 12))
-                            .foregroundStyle(MeridianColors.onSurface)
-                        Spacer()
-                    }
+                    contactRow(person)
                 }
             }
         }
     }
 
+    /// One expanded-panel contact line: name + star toggle + remove (Android :1131-1172).
+    private func contactRow(_ person: Person) -> some View {
+        HStack(spacing: MeridianSpacing.xs.rawValue + 2) {
+            Image(systemName: "person.fill")
+                .font(.labelMedium)
+                .foregroundStyle(MeridianColors.onSurface.opacity(0.4))
+                .accessibilityHidden(true)
+            Text(person.name)
+                .font(.bodyMedium)
+                .foregroundStyle(MeridianColors.onSurface)
+            Spacer()
+            Button {
+                onToggleContactFavorite(person)
+            } label: {
+                Image(systemName: person.isFavorite ? "star.fill" : "star")
+                    .font(.bodyMedium)
+                    .foregroundStyle(person.isFavorite ? MeridianColors.daylightAccent
+                                                       : MeridianColors.onSurface.opacity(0.4))
+                    // Keep the glyph small but give it a full 44pt hit area (iOS minimum).
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(person.isFavorite ? "Unstar \(person.name)" : "Star \(person.name)")
+            .accessibilityAddTraits(.isButton)
+            Button {
+                onRemoveContact(person)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.bodyMedium)
+                    // Route the destructive tint through the palette's error token, not Color.red.
+                    .foregroundStyle(MeridianColors.error)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(person.name)")
+            .accessibilityAddTraits(.isButton)
+        }
+    }
+
     // MARK: Context menu
 
+    /// Contact-only rows keep just "Add contact" — the zone itself isn't pinned, so
+    /// favorite / set-home / remove would act on nothing (Android :1210-1257).
     @ViewBuilder
     private var contextMenuItems: some View {
-        Button {
-            onToggleFavorite()
-        } label: {
-            Label(zone.isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                  systemImage: zone.isFavorite ? "star.slash" : "star")
+        if !contactOnlyLocation {
+            Button {
+                onToggleZoneFavorite()
+            } label: {
+                Label(isFavoriteZone ? "Remove from Favorites" : "Add to Favorites",
+                      systemImage: isFavoriteZone ? "star.slash" : "star")
+            }
         }
-        if !zone.isHome {
+        Button {
+            showAddContact = true
+        } label: {
+            Label("Add contact to \(displayName)", systemImage: "person.badge.plus")
+        }
+        if !contactOnlyLocation, !isHome {
             Button {
                 onSetHome()
             } label: {
                 Label("Set as My Home Zone", systemImage: "house")
             }
         }
-        Button(role: .destructive) {
-            onDelete()
-        } label: {
-            Label("Remove from Watchlist", systemImage: "trash")
+        if !contactOnlyLocation {
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Remove from Watchlist", systemImage: "trash")
+            }
         }
     }
 }

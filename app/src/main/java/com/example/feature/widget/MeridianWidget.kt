@@ -44,21 +44,21 @@ class MeridianWidget : GlanceAppWidget() {
         val app = context.applicationContext as MeridianApplication
         val zoneDao = app.container.zoneDao
 
-        // Tapping the widget deep-links into the World screen (§5.4).
-        val openWorldIntent = Intent(Intent.ACTION_VIEW, Uri.parse("meridian://world"))
-            .setPackage(context.packageName)
-
         provideContent {
             // Retrieve pinned zones on launch/refresh from Room
             var savedZones = emptyList<SavedZone>()
             try {
-                // Fetch the list of saved zones from flow cleanly
                 savedZones = kotlinx.coroutines.runBlocking {
                     zoneDao.getAllZones().first()
                 }
             } catch (e: Exception) {
                 // Handle fallback if database is loading
             }
+
+            val openWorldIntent = Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse(if (savedZones.isEmpty()) "meridian://addzone" else "meridian://world"),
+            ).setPackage(context.packageName)
 
             // Theme-driven like the app: GlanceTheme uses Material You dynamic color on
             // Android 12+ and a sensible light/dark baseline otherwise, so the widget stays
@@ -97,7 +97,7 @@ class MeridianWidget : GlanceAppWidget() {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No pinned locations yet. Open Meridian to add worldwide cities.",
+                                text = "No pinned locations yet. Tap to add a city.",
                                 style = TextStyle(
                                     color = GlanceTheme.colors.onSurfaceVariant,
                                     fontSize = 12.sp

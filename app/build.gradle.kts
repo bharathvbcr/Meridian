@@ -1,3 +1,5 @@
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -57,6 +59,18 @@ android {
   testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
+// Robolectric on compileSdk 36 requires a Java 21+ runtime; without this the unit-test worker
+// falls back to whatever JVM launched Gradle (Java 17 on this setup), and the Robolectric-based
+// tests fail at sandbox creation with "Android SDK 36 requires Java 21 (have Java 17)". Pinning a
+// Java 21 toolchain launcher for the Test tasks fixes it regardless of the daemon's JVM.
+tasks.withType<Test>().configureEach {
+  javaLauncher.set(
+    javaToolchains.launcherFor {
+      languageVersion.set(JavaLanguageVersion.of(21))
+    }
+  )
+}
+
 // Enable desugaring for java.time backward compatibility (just in case, despite minSdk 26)
 // Actually minSdk 26 already supports java.time natively.
 
@@ -90,6 +104,9 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.viewmodel.compose)
   implementation(libs.androidx.navigation.compose)
+  // Installs the baseline profiles shipped inside Compose/AndroidX AARs (and enables Play cloud
+  // profiles), so first launch and first scroll run AOT-compiled instead of waiting on the JIT.
+  implementation(libs.androidx.profileinstaller)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   // implementation(libs.coil.compose)
@@ -130,6 +147,7 @@ dependencies {
   testImplementation(libs.roborazzi)
   testImplementation(libs.roborazzi.compose)
   testImplementation(libs.roborazzi.junit.rule)
+  testImplementation(libs.snakeyaml)
   androidTestImplementation(platform(libs.androidx.compose.bom))
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   androidTestImplementation(libs.androidx.espresso.core)

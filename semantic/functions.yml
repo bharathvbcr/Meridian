@@ -1,0 +1,106 @@
+# =============================================================================
+# Meridian — Semantic Functions (the domain "verbs")
+# =============================================================================
+# Some core business logic in Meridian is COMPUTED, not aggregated: current
+# time, time conversion, and fair-meeting ranking are functions of the live
+# clock and DST rules, so they cannot be expressed as SQL measures over the
+# cubes in meridian.yml. They are the domain's verbs; the cubes are its nouns.
+#
+# These mirror the Firebase/Gemini FunctionDeclarations in
+#   app/.../core/ai/MeridianAiTools.kt  (functionDeclarations()).
+# The AI agent should CALL a function for anything time-valued and QUERY a cube
+# for anything about the stored data (how many contacts, upcoming events, ...).
+#
+# `resolves` names the cube/dimension a text argument grounds against, so an
+# agent can reuse zone/person resolution instead of guessing IANA ids.
+# =============================================================================
+
+functions:
+  - name: get_current_time
+    title: "Current Time in a Place"
+    description: >
+      The current wall-clock time and date in one place. Use for "what time is
+      it in X" — never read a stored value, which goes stale.
+    intent: CURRENT_TIME
+    meta:
+      synonyms: ["what time is it", "current time", "time now", "local time in"]
+    arguments:
+      - name: location
+        type: string
+        required: true
+        description: "A city, place, or time zone."
+        resolves: zones.id            # grounded via the zone conformed dimension
+    returns:
+      location: "string — resolved place name"
+      time: "string — HH:mm local"
+      date: "string — e.g. 'Monday, 17 June 2026'"
+      iso: "string — ISO-8601 offset date-time"
+
+  - name: convert_time
+    title: "Convert a Time Between Places"
+    description: >
+      Convert a specific clock time from one place to another (DST-aware, with a
+      next/previous-day flag when the conversion crosses midnight).
+    intent: CONVERT
+    meta:
+      synonyms: ["convert time", "what is X in Y", "time difference", "X o'clock in"]
+    arguments:
+      - name: time
+        type: string
+        required: true
+        description: "The clock time to convert, e.g. '3 PM' or '15:00'."
+      - name: from_location
+        type: string
+        required: true
+        description: "The place the given time is in."
+        resolves: zones.id
+      - name: to_location
+        type: string
+        required: true
+        description: "The place to convert the time into."
+        resolves: zones.id
+    returns:
+      from: "string — 'Place: HH:mm date'"
+      to: "string — 'Place: HH:mm date' (+ day-shift note if it crosses midnight)"
+
+  - name: find_meeting_time
+    title: "Rank Fair Meeting Slots"
+    description: >
+      Rank the fairest meeting hours across two or more places/people, honoring
+      each participant's working and do-not-disturb windows. Use for "best time
+      to meet / call". Backed by the people cube's work_start_hour / work_end_hour
+      and dnd windows; participants may be pinned zones or saved people.
+    intent: MEETING
+    meta:
+      synonyms: ["best time to meet", "good meeting time", "overlap", "fair time", "when can we meet"]
+    arguments:
+      - name: locations
+        type: array<string>
+        required: true
+        min_items: 2
+        description: "Cities, places, or time zones to meet across."
+        resolves: zones.id
+      - name: within_days
+        type: integer
+        required: false
+        default: 0
+        description: "Search horizon in days from today (0 = today, 1 = tomorrow, ...)."
+    returns:
+      places: "array<string> — resolved participant places"
+      slots: >
+        array of { rating: string, per-participant local hour, and a local view of
+        WORKING | AWAKE | OUTSIDE_HOURS | ASLEEP } — top 3, already ranked.
+
+# -----------------------------------------------------------------------------
+# ROUTING CONTRACT (how the agent chooses)
+# -----------------------------------------------------------------------------
+# This matches SemanticRouter / SemanticCachePolicy in core/ai/SemanticLayer.kt:
+#   - CURRENT_TIME  -> get_current_time     (never cached; always live)
+#   - CONVERT       -> convert_time         (cached only when no "now"; keyed to the minute)
+#   - MEETING       -> find_meeting_time
+#   - SCHEDULE      -> emit schedule JSON    (an ACTION; never cached / never replayed)
+#   - GENERAL       -> answer from the LIVE CLOCK grounding block
+routing:
+  cache_bypass_intents: ["CURRENT_TIME", "SCHEDULE"]        # never replay
+  cache_bypass_when_prompt_contains: { CONVERT: ["now"] }   # freshness guard
+  time_valued: true   # answers embed a live clock reading; bound cache freshness to the minute

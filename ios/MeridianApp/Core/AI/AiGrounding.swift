@@ -367,7 +367,16 @@ struct AiGroundingBuilder {
             let locals = participants.compactMap { label -> String? in
                 guard let tz = TimeZone(identifier: label.participant.zoneId) else { return nil }
                 let hour = hourOf(slot.start, tz: tz)
-                let tag = (slot.localViews[label.participant.zoneId] == .working) ? " (working)" : ""
+                // Full occupancy tag per participant (Android tags all four states,
+                // not just working — the model ranks answers on these).
+                let tag: String
+                switch slot.localViews[label.participant.zoneId] {
+                case .working: tag = " (working)"
+                case .awake: tag = " (awake)"
+                case .outsideHours: tag = " (off-hours)"
+                case .asleep: tag = " (asleep)"
+                case nil: tag = ""
+                }
                 return "\(label.displayName) \(String(format: "%02d:00", hour))\(tag)"
             }.joined(separator: ", ")
             return "\(slot.label.displayName): \(locals)"

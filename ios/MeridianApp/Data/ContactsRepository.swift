@@ -22,7 +22,8 @@ actor ContactsRepository {
     private let store = CNContactStore()
 
     /// Keys fetched on every search. Static to avoid re-allocation per call.
-    private static let fetchKeys: [CNKeyDescriptor] = [
+    /// The descriptors are immutable constants, so reading this shared array is race-free.
+    nonisolated(unsafe) private static let fetchKeys: [CNKeyDescriptor] = [
         CNContactGivenNameKey as CNKeyDescriptor,
         CNContactFamilyNameKey as CNKeyDescriptor,
         CNContactMiddleNameKey as CNKeyDescriptor,
