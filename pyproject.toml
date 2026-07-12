@@ -1,0 +1,17 @@
+[project]
+name = "meridian-tools"
+version = "0.1.0"
+description = "Meridian asset generators, city DB builder, and semantic-layer reference CLI"
+requires-python = ">=3.9"
+readme = "README.md"
+
+[project.scripts]
+meridian-gen-icon = "store_assets.gen_icon:main"
+meridian-gen-feature-graphic = "store_assets.gen_feature_graphic:main"
+meridian-gen-earth = "tools.gen_earth_texture:main"
+meridian-build-cities = "tools.citygen.build_cities_db:main"
+meridian-semantic-bench = "semantic_layer.benchmark:main"
+
+[tool.setuptools.packages.find]
+where = [".", "tools", "tools/semantic_layer"]
+include = ["store_assets*", "tools*", "semantic_layer*"]

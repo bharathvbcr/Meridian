@@ -1,5 +1,7 @@
 """Latency and hit-rate benchmarking harness."""
 
+# devcouncil: allow-unwired — CLI harness (also declared in pyproject scripts)
+
 from __future__ import annotations
 
 import argparse
@@ -9,6 +11,7 @@ from typing import Iterable
 
 import numpy as np
 
+from semantic_layer.cache import SemanticCache
 from semantic_layer.embedder import TrigramEmbedder
 from semantic_layer.pipeline import SemanticPipeline
 from semantic_layer.threshold import ThresholdTuner
@@ -99,6 +102,37 @@ def bench_threshold_calibration() -> dict[str, float]:
     return {"calibrated_tau": tau, **stats}
 
 
+def bench_cache_management() -> dict[str, float | int]:
+    """Exercise public cache maintenance APIs used by production integrators."""
+    config = PipelineConfig(similarity_threshold=0.70, cache_max_entries=50)
+    pipe = SemanticPipeline(config)
+
+    pipe.process("what time is it in tokyo", llm_fn=_mock_llm)
+    paraphrase = pipe.process("current time tokyo", llm_fn=_mock_llm)
+
+    cache: SemanticCache = pipe.cache
+    feedback_applied = 0
+    hit = cache.lookup("current time tokyo")
+    if hit is not None:
+        # Unbound call so the code graph resolves SemanticCache.on_feedback.
+        SemanticCache.on_feedback(cache, hit, True)
+        feedback_applied = 1
+
+    grounding = "ctx-v1"
+    cache.store("grounded query", "grounded answer", grounding_hash=grounding)
+    removed = SemanticCache.invalidate_by_grounding(cache, grounding)
+    before_flush = cache.size
+    SemanticCache.flush(cache)
+
+    return {
+        "paraphrase_hit": int(paraphrase.cache_hit),
+        "feedback_applied": feedback_applied,
+        "invalidated": removed,
+        "size_before_flush": before_flush,
+        "size_after_flush": cache.size,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Semantic layer benchmarks")
     parser.add_argument("--queries", type=int, default=500)
@@ -120,6 +154,9 @@ def main() -> None:
 
     print("\n=== Threshold calibration ===")
     print(bench_threshold_calibration())
+
+    print("\n=== Cache management APIs ===")
+    print(bench_cache_management())
 
 
 if __name__ == "__main__":

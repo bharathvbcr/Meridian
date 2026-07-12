@@ -8,7 +8,12 @@ a believable Earth on top: depth-shaded oceans, latitude-driven land biomes
 (tropical green -> desert tan -> boreal -> polar ice) and fractal terrain variation.
 
 Output: app/src/main/res/drawable/world_map.png (RGB, opaque), high resolution.
+
+Usage:
+    python tools/gen_earth_texture.py
 """
+# devcouncil: allow-unwired — asset generator CLI (also declared in pyproject scripts)
+
 import os
 import numpy as np
 from PIL import Image

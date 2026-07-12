@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# devcouncil: allow-unwired — data-build CLI (also declared in pyproject scripts)
 """
 Generate the bundled `cities.db` SQLite database that powers Meridian's
 "every city" location search, from the open GeoNames dataset.

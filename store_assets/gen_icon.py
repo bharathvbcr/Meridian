@@ -5,7 +5,12 @@ Strategy:
   1. Build an SVG that composites the background (gradient) and foreground (globe paths).
   2. Render with cairosvg at 512x512.
   3. Fallback: upscale xxxhdpi webp with Pillow if cairosvg fails.
+
+Usage:
+    python store_assets/gen_icon.py
 """
+
+# devcouncil: allow-unwired — one-shot store asset CLI (also declared in pyproject scripts)
 
 import sys
 import os
@@ -101,10 +106,15 @@ def try_pillow_upscale():
     return True
 
 
-if __name__ == "__main__":
+def main() -> int:
     os.makedirs(os.path.dirname(OUTPUT), exist_ok=True)
     if not try_cairosvg():
         if not try_pillow_upscale():
             print("ERROR: all methods failed", file=sys.stderr)
-            sys.exit(1)
+            return 1
     print("Done.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

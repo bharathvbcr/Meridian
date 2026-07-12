@@ -1,4 +1,5 @@
-.PHONY: android ios build-all test-android
+.PHONY: android ios build-all test-android \
+	gen-icon gen-feature-graphic gen-earth build-cities semantic-bench assets
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
@@ -20,3 +21,23 @@ ios:
 
 build-all: android test-android ios
 	@echo "All builds succeeded."
+
+# --- Python tooling (store assets, map texture, city DB, semantic bench) ---
+
+gen-icon:
+	cd $(ROOT) && python store_assets/gen_icon.py
+
+gen-feature-graphic:
+	cd $(ROOT) && python store_assets/gen_feature_graphic.py
+
+gen-earth:
+	cd $(ROOT) && python tools/gen_earth_texture.py
+
+build-cities:
+	cd $(ROOT) && python tools/citygen/build_cities_db.py
+
+semantic-bench:
+	cd $(ROOT)/tools/semantic_layer && python -m semantic_layer.benchmark --queries 200
+
+assets: gen-icon gen-feature-graphic
+	@echo "Store assets regenerated."
