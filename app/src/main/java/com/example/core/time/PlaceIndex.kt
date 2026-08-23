@@ -205,7 +205,7 @@ object PlaceIndex {
         Place("Kuala Lumpur", "Malaysia", "Asia/Kuala_Lumpur", listOf("kul", "malaysia")),
         Place("Manila", "Philippines", "Asia/Manila", listOf("mnl", "philippines")),
         Place("Ho Chi Minh City", "Vietnam", "Asia/Ho_Chi_Minh", listOf("sgn", "saigon", "vietnam")),
-        Place("Hanoi", "Vietnam", "Asia/Bangkok", listOf("han")),
+        Place("Hanoi", "Vietnam", "Asia/Ho_Chi_Minh", listOf("han")),
         Place("Phnom Penh", "Cambodia", "Asia/Phnom_Penh", listOf("pnh", "cambodia")),
         Place("Yangon", "Myanmar", "Asia/Yangon", listOf("rgn", "rangoon", "myanmar")),
         // ---- Central Asia ----

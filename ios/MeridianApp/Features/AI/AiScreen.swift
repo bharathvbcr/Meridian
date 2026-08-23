@@ -590,8 +590,8 @@ private struct StreamingPartialBubble: View {
                 .padding(.horizontal, MeridianSpacing.md.rawValue)
                 .padding(.vertical, MeridianSpacing.sm.rawValue)
                 .background {
-                    RoundedRectangle(cornerRadius: MeridianRadius.lg.rawValue, style: .continuous)
-                        .fill(MeridianColors.surfaceVariant.opacity(0.35))
+                    RoundedRectangle(cornerRadius: MeridianRadius.medium.rawValue, style: .continuous)
+                        .fill(MeridianColors.surface.opacity(0.35))
                 }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

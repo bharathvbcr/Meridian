@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from semantic_layer.embedder import cosine
+
 
 
 @dataclass
@@ -45,7 +45,11 @@ class ThresholdTuner:
         grid: np.ndarray | None = None,
     ) -> tuple[float, dict[str, float]]:
         """
-        Select τ* = max τ such that FPR(τ) ≤ max_fpr.
+        Select τ* = the smallest τ such that FPR(τ) ≤ max_fpr.
+
+        Because TPR is monotone non-decreasing as τ decreases, the *most permissive*
+        feasible threshold maximizes recall subject to the false-positive budget.
+        (Picking the largest feasible τ would silently trade away every hit.)
 
         Args:
             query_vecs: (N, D) normalized query embeddings
@@ -54,13 +58,16 @@ class ThresholdTuner:
             max_fpr: maximum allowed false-positive rate
         """
         if grid is None:
-            grid = np.linspace(0.70, 0.98, 29)
+            # Span the full plausible range: embedding spaces differ wildly in their
+            # similarity distributions, so the whole point of calibration is to find
+            # where this space's positives actually live.
+            grid = np.linspace(0.05, 0.98, 94)
 
         sims = np.sum(query_vecs * cache_vecs, axis=1)
         positives = labels.astype(bool)
         negatives = ~positives
 
-        best_tau = grid[0]
+        best_tau: float | None = None
         best_stats: dict[str, float] = {}
 
         for tau in grid:
@@ -72,6 +79,7 @@ class ThresholdTuner:
             fpr = fp / max(fp + tn, 1)
             tpr = tp / max(tp + fn, 1)
             if fpr <= max_fpr:
+                # Ascending scan: the first feasible τ already maximizes TPR.
                 best_tau = float(tau)
                 best_stats = {
                     "tau": best_tau,
@@ -82,13 +90,32 @@ class ThresholdTuner:
                     "tn": tn,
                     "fn": fn,
                 }
+                break
+
+        if best_tau is None:
+            # No grid point meets the budget: report the conservative ceiling with its real
+            # stats instead of an empty success dict.
+            tau = float(grid[-1])
+            preds = sims >= tau
+            tp = int(np.sum(preds & positives))
+            fp = int(np.sum(preds & negatives))
+            tn = int(np.sum(~preds & negatives))
+            fn = int(np.sum(~preds & positives))
+            best_tau = tau
+            best_stats = {
+                "tau": best_tau,
+                "fpr": fp / max(fp + tn, 1),
+                "tpr": tp / max(tp + fn, 1),
+                "tp": tp,
+                "fp": fp,
+                "tn": tn,
+                "fn": fn,
+            }
 
         return best_tau, best_stats
 
     def should_hit(
         self,
-        query_vec: np.ndarray,
-        best_vec: np.ndarray,
         best_sim: float,
         second_best_sim: float,
         margin: float = 0.04,
@@ -98,6 +125,4 @@ class ThresholdTuner:
             return False
         if best_sim - second_best_sim < margin:
             return False
-        # redundant cosine check for non-FAISS paths
-        _ = cosine(query_vec, best_vec)
         return True

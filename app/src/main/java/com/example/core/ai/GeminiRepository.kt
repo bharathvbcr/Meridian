@@ -223,13 +223,13 @@ class GeminiRepository(
                 AiEngine.ON_DEVICE -> {
                     val onDeviceText = tryOnDeviceInference(modelPrompt)
                     if (onDeviceText != null) {
-                        onPartial(onDeviceText)
+                        onPartial(displayableCandidate(onDeviceText))
                         onDeviceText to AiProvenance.ON_DEVICE
                     } else {
                         val model = selectModel()
                         val cloudResult = runWithTools(model, modelPrompt)
                             ?: return@withContext AiResult.Error("No response received from the assistant model.")
-                        onPartial(cloudResult.first)
+                        onPartial(displayableCandidate(cloudResult.first))
                         cloudResult.first to if (cloudResult.second) AiProvenance.ON_DEVICE else AiProvenance.CLOUD
                     }
                 }
@@ -246,6 +246,10 @@ class GeminiRepository(
             )
             logResult("llm", result, startedAt)
             result
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // Structured concurrency: a cancelled caller must see cancellation, not an Error result
+            // that keeps the (already-cancelled) coroutine alive.
+            throw e
         } catch (e: Exception) {
             AiResult.Error(e.message ?: "Unknown error occurred running the Gemini Nano assistant.")
         }
@@ -275,11 +279,13 @@ class GeminiRepository(
     ): AiResult {
         val scheduleJson = ScheduleParser.extractScheduleJson(text)
         if (scheduleJson != null) {
+            // A booking is an action, never a replayable answer: even if `storeInCache` was set
+            // by an intent misclassification, schedule JSON must not enter the cache (a
+            // near-duplicate later prompt would re-book the first request's time).
             ScheduleParser.buildScheduledTask(
                 scheduleJson, prompt, currentTime.toInstant(), zone.id,
                 resolveZoneId = { tools.resolveZoneId(it) },
             )?.let { task ->
-                if (storeInCache) semanticCache.store(prompt, text, provenance, groundingKey)
                 return AiResult.Scheduled(task, provenance)
             }
             val title = ScheduleParser.titleOf(scheduleJson)
@@ -318,13 +324,17 @@ class GeminiRepository(
      */
     private suspend fun tryOnDeviceInference(contextualPrompt: String): String? {
         val model = resolveOnDeviceModel() ?: return null
-        return runCatching {
+        return try {
             model.generateContent(
                 generateContentRequest(TextPart(contextualPrompt)) {
                     promptPrefix = systemPromptPrefix
                 }
             ).candidates.firstOrNull()?.text?.trim()?.takeIf { it.isNotEmpty() }
-        }.getOrNull()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /**

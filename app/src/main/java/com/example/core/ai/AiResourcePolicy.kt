@@ -12,12 +12,15 @@ class AiResourcePolicy(context: Context) {
 
     enum class Tier { NORMAL, DEGRADED, CRITICAL }
 
-    private val powerManager = context.getSystemService(PowerManager::class.java)
+    // getSystemService returns a platform type; some profiles/emulators can hand back null, so
+    // degrade to NORMAL-tier instead of crashing on a missing power manager.
+    private val powerManager: PowerManager? = context.getSystemService(PowerManager::class.java)
 
     fun currentTier(): Tier {
-        if (powerManager.isPowerSaveMode) return Tier.DEGRADED
+        val pm = powerManager ?: return Tier.NORMAL
+        if (pm.isPowerSaveMode) return Tier.DEGRADED
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            when (powerManager.currentThermalStatus) {
+            when (pm.currentThermalStatus) {
                 PowerManager.THERMAL_STATUS_SEVERE,
                 PowerManager.THERMAL_STATUS_CRITICAL,
                 PowerManager.THERMAL_STATUS_EMERGENCY,

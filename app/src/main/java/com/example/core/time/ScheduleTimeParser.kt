@@ -46,6 +46,11 @@ object ScheduleTimeParser {
 
         val date = parseDate(text, nowZdt.toLocalDate())
 
+        // A date plus an *explicit but impossible* clock time ("tomorrow 25:00", "…T24:00",
+        // "13pm") is a user mistake, not an absent time: fail closed instead of silently booking
+        // the 09:00 default nine hours away from what was asked.
+        if (date != null && time == null && hasMalformedExplicitTime(text)) return null
+
         val local = when {
             date != null && time != null -> date.atTime(time)
             date != null -> date.atTime(DEFAULT_TIME)
@@ -81,8 +86,28 @@ object ScheduleTimeParser {
     private fun ZonedDateTime.applyTime(time: LocalTime?): ZonedDateTime =
         if (time == null) this else toLocalDate().atTime(time).atZone(zone)
 
-    private fun parseTimeOfDay(text: String): LocalTime? {
+    /**
+     * True when the phrase contains an explicit numeric clock candidate that failed validation —
+     * hours/minutes out of range in either 24-hour or am/pm form. Distinguishes "no time given"
+     * from "given but unparseable" so callers can reject instead of defaulting.
+     */
+    private fun hasMalformedExplicitTime(text: String): Boolean {
+        ATTACHED_CLOCK_TIME.containsMatchIn(text) && return true
+        ATTACHED_AM_PM_TIME.containsMatchIn(text) && return true
         AM_PM_TIME.find(text)?.let { m ->
+            val h = m.groupValues[1].toInt()
+            val min = m.groupValues[2].toIntOrNull() ?: 0
+            if (h !in 1..12 || min !in 0..59) return true
+        }
+        TWENTY_FOUR_HOUR.find(text)?.let { m ->
+            val h = m.groupValues[1].toInt()
+            val min = m.groupValues[2].toInt()
+            if (h !in 0..23 || min !in 0..59) return true
+        }
+        return false
+    }
+
+    private fun parseTimeOfDay(text: String): LocalTime? {        AM_PM_TIME.find(text)?.let { m ->
             var h = m.groupValues[1].toInt()
             val min = m.groupValues[2].toIntOrNull() ?: 0
             val pm = m.groupValues[3].replace(".", "") == "pm"
@@ -177,10 +202,14 @@ object ScheduleTimeParser {
 
     private val RELATIVE_DURATION =
         Regex("\\bin\\s+(\\d+|an?)\\s+(minutes?|mins?|hours?|hrs?|days?|weeks?)\\b")
-    private val AM_PM_TIME = Regex("(?<!\\d)(\\d{1,2})(?::(\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)(?![a-z])")
+    // Sign characters are excluded from both lookbehinds so "-1:30"/"-3pm" are never read as
+    // plain "1:30"/"3pm" — a negative clock time is a user mistake, not a valid time of day.
+    private val AM_PM_TIME = Regex("(?<![\\d+\\-])(\\d{1,2})(?::(\\d{2}))?\\s*(a\\.?m\\.?|p\\.?m\\.?)(?![a-z])")
     // Digit lookarounds (not \b) so an ISO "…-22T14:00" still yields the date and the 14:00 time —
     // a letter like 'T' next to a digit is not a word boundary.
-    private val TWENTY_FOUR_HOUR = Regex("(?<![\\d:])(\\d{1,2}):(\\d{2})(?!\\d)")
+    private val TWENTY_FOUR_HOUR = Regex("(?<![\\d:+\\-])(\\d{1,2}):(\\d{2})(?!\\d)")
+    private val ATTACHED_CLOCK_TIME = Regex("(?<=[+\\-/])\\s*(\\d{1,2}):(\\d{2})(?!\\d)")
+    private val ATTACHED_AM_PM_TIME = Regex("(?<=[+\\-/])\\s*(\\d{1,2})\\s*(?:a\\.?m\\.?|p\\.?m\\.?)")
     private val ISO_DATE = Regex("(?<!\\d)(\\d{4})-(\\d{1,2})-(\\d{1,2})(?!\\d)")
     private val NEXT_WEEK = Regex("\\bnext\\s+week\\b")
     private val NOON = Regex("\\b(noon|midday)\\b")

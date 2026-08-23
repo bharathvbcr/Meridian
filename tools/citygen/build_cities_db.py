@@ -57,8 +57,10 @@ when it changes.
 import argparse
 import csv
 import os
+import shutil
 import sqlite3
 import sys
+import time
 import unicodedata
 import urllib.request
 import zipfile
@@ -78,21 +80,54 @@ def fold(text: str) -> str:
     return stripped.lower().strip()
 
 
-def download(url: str, dest: str) -> None:
+def download(url: str, dest: str, attempts: int = 3) -> None:
+    """Downloads [url] to [dest] atomically: bytes land in a .part file and are renamed
+    into place only after a complete, non-empty transfer, so an interrupted download can
+    never poison the cache (a truncated zip previously passed this function's cache check
+    and then failed much later with an opaque BadZipFile)."""
     if os.path.exists(dest) and os.path.getsize(dest) > 0:
         print(f"  cached  {os.path.basename(dest)} ({os.path.getsize(dest):,} bytes)")
         return
-    print(f"  GET     {url}")
-    req = urllib.request.Request(url, headers={"User-Agent": "meridian-citygen/1.0"})
-    with urllib.request.urlopen(req, timeout=300) as r, open(dest, "wb") as f:
-        f.write(r.read())
-    print(f"          -> {dest} ({os.path.getsize(dest):,} bytes)")
+    tmp_path = dest + ".part"
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            print(f"  GET     {url}" + ("  (retry)" if attempt > 1 else ""))
+            req = urllib.request.Request(url, headers={"User-Agent": "meridian-citygen/1.0"})
+            with urllib.request.urlopen(req, timeout=300) as r, open(tmp_path, "wb") as f:
+                shutil.copyfileobj(r, f)
+            size = os.path.getsize(tmp_path)
+            if size == 0:
+                raise RuntimeError("server returned 0 bytes")
+            os.replace(tmp_path, dest)
+            print(f"          -> {dest} ({size:,} bytes)")
+            return
+        except Exception as e:
+            last_error = e
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if attempt < attempts:
+                time.sleep(2 * attempt)
+    raise RuntimeError(f"giving up on {url} after {attempts} attempts: {last_error!r}") from last_error
+
+
+def extract_member(zip_path: str, member: str, target_dir: str, url: str) -> None:
+    """Extracts one archive member, transparently recovering from a corrupt cached zip."""
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            z.extract(member, target_dir)
+    except (zipfile.BadZipFile, KeyError) as e:
+        print(f"  {zip_path} is unreadable ({e!r}); discarding cache and re-downloading.")
+        os.remove(zip_path)
+        download(url, zip_path)
+        with zipfile.ZipFile(zip_path) as z:
+            z.extract(member, target_dir)
 
 
 def load_country_names(path: str) -> dict:
     """ISO-3166 alpha-2 code -> country name, from countryInfo.txt."""
     names = {}
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
             if line.startswith("#") or not line.strip():
                 continue
@@ -108,7 +143,7 @@ def load_airports(path: str) -> list:
     IANA time zone are kept."""
     rows = []
     seen = set()
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
         for cols in csv.reader(f):
             if len(cols) < 12:
                 continue
@@ -142,8 +177,7 @@ def build(tier: int) -> str:
     download(OPENFLIGHTS, airports_path)
     if not os.path.exists(txt_path):
         print(f"Extracting {zip_name}...")
-        with zipfile.ZipFile(zip_path) as z:
-            z.extract(txt_name, HERE)
+        extract_member(zip_path, txt_name, HERE, f"{GEONAMES}/{zip_name}")
 
     countries = load_country_names(country_path)
     print(f"Loaded {len(countries)} country names.")
@@ -153,7 +187,7 @@ def build(tier: int) -> str:
     # key: (name_lower, zone) -> (name, name_lower, ascii_lower, country, zone, population)
     best: dict = {}
     total = 0
-    with open(txt_path, encoding="utf-8") as f:
+    with open(txt_path, encoding="utf-8", errors="replace") as f:
         for line in f:
             cols = line.rstrip("\n").split("\t")
             if len(cols) < 18:
@@ -191,48 +225,57 @@ def build(tier: int) -> str:
     if os.path.exists(db_path):
         os.remove(db_path)
     con = sqlite3.connect(db_path)
-    cur = con.cursor()
-    cur.execute("PRAGMA page_size=4096")
-    cur.execute("PRAGMA journal_mode=OFF")
-    cur.execute(
-        "CREATE TABLE city("
-        " name TEXT NOT NULL COLLATE NOCASE,"
-        " name_lower TEXT NOT NULL COLLATE NOCASE,"
-        " ascii_lower TEXT NOT NULL COLLATE NOCASE,"
-        " country TEXT NOT NULL,"
-        " zone TEXT NOT NULL,"
-        " population INTEGER NOT NULL)"
-    )
-    cur.execute(
-        "CREATE TABLE airport("
-        " iata TEXT NOT NULL,"
-        " iata_lower TEXT NOT NULL COLLATE NOCASE,"
-        " name TEXT NOT NULL,"
-        " name_lower TEXT NOT NULL COLLATE NOCASE,"
-        " city TEXT NOT NULL,"
-        " country TEXT NOT NULL,"
-        " zone TEXT NOT NULL)"
-    )
-    cur.execute("CREATE TABLE schema_meta(version INTEGER NOT NULL)")
-    cur.execute("INSERT INTO schema_meta(version) VALUES(?)", (BUNDLE_VERSION,))
-    cur.executemany(
-        "INSERT INTO city(name, name_lower, ascii_lower, country, zone, population)"
-        " VALUES(?,?,?,?,?,?)",
-        rows,
-    )
-    cur.executemany(
-        "INSERT INTO airport(iata, iata_lower, name, name_lower, city, country, zone)"
-        " VALUES(?,?,?,?,?,?,?)",
-        airports,
-    )
-    con.commit()
-    cur.execute("CREATE INDEX idx_city_name_lower ON city(name_lower COLLATE NOCASE)")
-    cur.execute("CREATE INDEX idx_city_ascii_lower ON city(ascii_lower COLLATE NOCASE)")
-    cur.execute("CREATE INDEX idx_airport_iata ON airport(iata_lower COLLATE NOCASE)")
-    con.commit()
-    cur.execute("VACUUM")
-    con.commit()
-    con.close()
+    try:
+        cur = con.cursor()
+        cur.execute("PRAGMA page_size=4096")
+        cur.execute("PRAGMA journal_mode=OFF")
+        cur.execute(
+            "CREATE TABLE city("
+            " name TEXT NOT NULL COLLATE NOCASE,"
+            " name_lower TEXT NOT NULL COLLATE NOCASE,"
+            " ascii_lower TEXT NOT NULL COLLATE NOCASE,"
+            " country TEXT NOT NULL,"
+            " zone TEXT NOT NULL,"
+            " population INTEGER NOT NULL)"
+        )
+        cur.execute(
+            "CREATE TABLE airport("
+            " iata TEXT NOT NULL,"
+            " iata_lower TEXT NOT NULL COLLATE NOCASE,"
+            " name TEXT NOT NULL,"
+            " name_lower TEXT NOT NULL COLLATE NOCASE,"
+            " city TEXT NOT NULL,"
+            " country TEXT NOT NULL,"
+            " zone TEXT NOT NULL)"
+        )
+        cur.execute("CREATE TABLE schema_meta(version INTEGER NOT NULL)")
+        cur.execute("INSERT INTO schema_meta(version) VALUES(?)", (BUNDLE_VERSION,))
+        cur.executemany(
+            "INSERT INTO city(name, name_lower, ascii_lower, country, zone, population)"
+            " VALUES(?,?,?,?,?,?)",
+            rows,
+        )
+        cur.executemany(
+            "INSERT INTO airport(iata, iata_lower, name, name_lower, city, country, zone)"
+            " VALUES(?,?,?,?,?,?,?)",
+            airports,
+        )
+        con.commit()
+        cur.execute("CREATE INDEX idx_city_name_lower ON city(name_lower COLLATE NOCASE)")
+        cur.execute("CREATE INDEX idx_city_ascii_lower ON city(ascii_lower COLLATE NOCASE)")
+        cur.execute("CREATE INDEX idx_airport_iata ON airport(iata_lower COLLATE NOCASE)")
+        con.commit()
+        cur.execute("VACUUM")
+        con.commit()
+    except Exception:
+        # Never strand a handle on a half-built db: close it and remove the partial file
+        # so a later run starts clean instead of tripping over corrupt tables.
+        con.close()
+        if os.path.exists(db_path):
+            os.remove(db_path)
+        raise
+    finally:
+        con.close()
 
     size = os.path.getsize(db_path)
     print(f"\nBuilt {db_path}")

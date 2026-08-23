@@ -138,9 +138,7 @@ class SemanticCache:
             if best_sim < self._config.ood_max_sim_floor:
                 return None
 
-            if not self._tuner.should_hit(
-                q_vec, entry.vector, best_sim, second_sim, self._margin
-            ):
+            if not self._tuner.should_hit(best_sim, second_sim, self._margin):
                 return None
 
             now = time.monotonic()
@@ -177,7 +175,7 @@ class SemanticCache:
                     last_accessed=now,
                     provenance=provenance,
                     grounding_hash=grounding_hash,
-                    ttl_seconds=ttl_seconds or self._default_ttl,
+                    ttl_seconds=self._default_ttl if ttl_seconds is None else ttl_seconds,
                 ),
             )
             self._evict_lru()

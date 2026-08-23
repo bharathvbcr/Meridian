@@ -38,6 +38,22 @@ class ScheduleTimeParserTest {
     }
 
     @Test
+    fun `malformed explicit time with a date is rejected not defaulted`() {
+        // The user asked for a specific (impossible) time — silently booking 09:00 instead would be
+        // nine hours off. A date plus an unparseable clock time must fail closed.
+        assertNull(parse("tomorrow 25:00"))
+        assertNull(parse("tomorrow 14:75"))
+        assertNull(parse("2026-06-22T24:00"))
+        assertNull(parse("tomorrow 13pm"))
+    }
+
+    @Test
+    fun `date without any time still defaults to nine am`() {
+        assertEquals(at(london, 2026, 6, 22, 9, 0), parse("next monday"))
+        assertEquals(at(london, 2026, 6, 18, 9, 0), parse("tomorrow"))
+    }
+
+    @Test
     fun `today is included for a bare weekday but skipped for next`() {
         assertEquals(at(london, 2026, 6, 17, 9, 0), parse("wednesday"))      // today
         assertEquals(at(london, 2026, 6, 24, 9, 0), parse("next wednesday")) // +7

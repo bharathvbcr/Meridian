@@ -8,7 +8,7 @@
 
 Meridian is a multi-platform application (native **Kotlin/Jetpack Compose Android** and native **Swift/SwiftUI iOS + watchOS**) for **local time, world time, multi-zone planning, and AI-assisted scheduling**. It features a bold **Material 3 Expressive** design system on Android and an **Apple-style Liquid Glass** design system across both platforms (utilizing Haze blur and custom canvas compositor / AGSL refraction pass).
 
-See the [docs/adr](file:///Users/bharath/Code/Meridian/docs/adr) directory for key architectural decisions.
+See the [docs/adr](file:///Users/bharath/Code/apps/Meridian/docs/adr) directory for key architectural decisions.
 
 <div align="center">
 <img src="store_assets/screenshots/screenshot_world.png" width="200" alt="World map" />
@@ -33,19 +33,19 @@ See the [docs/adr](file:///Users/bharath/Code/Meridian/docs/adr) directory for k
 
 Meridian features a declarative and optimized semantic AI layer to translate natural language queries into correct structured app executions:
 
-1. **Application Semantic Model ([semantic/](file:///Users/bharath/Code/Meridian/semantic))**:
+1. **Application Semantic Model ([semantic/](file:///Users/bharath/Code/apps/Meridian/semantic))**:
    - Uses **Cube YAML** notation to model conformed timezone dimensions, contacts/people, and task schedules.
-   - Defines safe semantic views (`people_directory`, `task_schedule`, `zone_registry`) in [meridian.yml](file:///Users/bharath/Code/Meridian/semantic/meridian.yml) to prevent chasm traps when joining one-to-many relationships.
-   - Declares domain "verbs" as semantic functions in [functions.yml](file:///Users/bharath/Code/Meridian/semantic/functions.yml) (`get_current_time`, `convert_time`, `find_meeting_time`).
-2. **Semantic Caching & Routing Reference ([tools/semantic_layer/](file:///Users/bharath/Code/Meridian/tools/semantic_layer))**:
+   - Defines safe semantic views (`people_directory`, `task_schedule`, `zone_registry`) in [meridian.yml](file:///Users/bharath/Code/apps/Meridian/semantic/meridian.yml) to prevent chasm traps when joining one-to-many relationships.
+   - Declares domain "verbs" as semantic functions in [functions.yml](file:///Users/bharath/Code/apps/Meridian/semantic/functions.yml) (`get_current_time`, `convert_time`, `find_meeting_time`).
+2. **Semantic Caching & Routing Reference ([tools/semantic_layer/](file:///Users/bharath/Code/apps/Meridian/tools/semantic_layer))**:
    - An edge-optimized reference implementation in Python utilizing `sentence-transformers` and `FAISS`.
    - **Dynamic threshold calibration (\(\tau\))**: Auto-tunes cosine similarity threshold to balance false hits against miss rate.
    - **Context Compression**: Knapsack-relevance-based token reduction to retain \(\ge 90\%\) answer recall.
    - **Complexity Router**: Routes simple tasks to smaller model tiers and complex tasks to larger tiers.
 3. **Mobile Client Implementations**:
-   - [SemanticLayer.kt](file:///Users/bharath/Code/Meridian/app/src/main/java/com/example/core/ai/SemanticLayer.kt) and [SemanticLayer.swift](file:///Users/bharath/Code/Meridian/ios/MeridianApp/Core/AI/SemanticLayer.swift) implement matching lightweight routing and cache contracts. They use local trigrams and regex/rule-based heuristics to run with zero network overhead.
+   - [SemanticLayer.kt](file:///Users/bharath/Code/apps/Meridian/app/src/main/java/com/example/core/ai/SemanticLayer.kt) and [SemanticLayer.swift](file:///Users/bharath/Code/apps/Meridian/ios/MeridianApp/Core/AI/SemanticLayer.swift) implement matching lightweight routing and cache contracts. They use local trigrams and regex/rule-based heuristics to run with zero network overhead.
 
-For more details on the design, see [docs/semantic-layer-architecture.md](file:///Users/bharath/Code/Meridian/docs/semantic-layer-architecture.md).
+For more details on the design, see [docs/semantic-layer-architecture.md](file:///Users/bharath/Code/apps/Meridian/docs/semantic-layer-architecture.md).
 
 ---
 
@@ -87,7 +87,7 @@ You can also build from the root via:
 ```bash
 make ios
 ```
-For more information, see [ios/README_iOS.md](file:///Users/bharath/Code/Meridian/ios/README_iOS.md).
+For more information, see [ios/README_iOS.md](file:///Users/bharath/Code/apps/Meridian/ios/README_iOS.md).
 
 ### Semantic Layer Benchmarks
 To run latency and accuracy benchmarks for the semantic AI layer reference implementation:

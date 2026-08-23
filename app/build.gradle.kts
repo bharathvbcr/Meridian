@@ -23,13 +23,20 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+  val keystoreFile = file(keystorePath)
+  val storePass = System.getenv("STORE_PASSWORD")
+  val keyPass = System.getenv("KEY_PASSWORD")
+  val hasReleaseSigning = keystoreFile.exists() && !storePass.isNullOrBlank() && !keyPass.isNullOrBlank()
+
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+    if (hasReleaseSigning) {
+      create("release") {
+        storeFile = keystoreFile
+        storePassword = storePass
+        keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
+        keyPassword = keyPass
+      }
     }
     // Debug builds use AGP's auto-generated debug keystore (~/.android/debug.keystore),
     // so the project assembles out-of-the-box with no extra setup.
@@ -41,7 +48,9 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      if (hasReleaseSigning) {
+        signingConfig = signingConfigs.getByName("release")
+      }
       ndk { debugSymbolLevel = "FULL" }
     }
     debug {

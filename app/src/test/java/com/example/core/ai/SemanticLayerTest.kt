@@ -118,4 +118,22 @@ class SemanticLayerTest {
         assertTrue(compressed.length < block.length)
         assertTrue(compressed.lines().count { it.startsWith("• ") } <= 3)
     }
+
+    @Test
+    fun progressivePartial_isBoundedForLongAnswers() {
+        // A long rules-engine reply must stream in a bounded number of steps — one callback per
+        // word re-rendered the whole bubble ~55×/second for seconds on end.
+        val words = List(200) { "w$it" }
+        val text = words.joinToString(" ")
+        val chunks = partialChunks(text, maxChunks = 32)
+        assertTrue("expected ≤32 chunks, got ${chunks.size}", chunks.size <= 32)
+        assertEquals(text, chunks.last())
+        assertTrue(chunks.first() != text)
+    }
+
+    @Test
+    fun progressivePartial_shortAnswersStillStreamWordByWord() {
+        val chunks = partialChunks("Tokyo is nine pm", maxChunks = 32)
+        assertEquals(listOf("Tokyo", "Tokyo is", "Tokyo is nine", "Tokyo is nine pm"), chunks)
+    }
 }

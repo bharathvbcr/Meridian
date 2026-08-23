@@ -994,6 +994,9 @@ private fun DraftConfirmCard(
         }.getOrElse { draft.zoneId }
     }
     val startInstant = remember(draft) { Instant.ofEpochMilli(draft.timestamp) }
+    // The model can propose past-dated events ("yesterday 3pm" phrasing); mirror
+    // QuickScheduleCard's guard so a stale draft can't be confirmed as-is.
+    val isPast = startInstant.isBefore(Instant.now())
     // Export the proposed meeting as a real calendar event; surface only failures (§12.6).
     fun exportSync(action: () -> EventActionResult) {
         val result = action()
@@ -1050,10 +1053,21 @@ private fun DraftConfirmCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )
+                if (isPast) {
+                    Text(
+                        text = "That time has already passed — ask for a later one.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = onConfirm, modifier = Modifier.weight(1f)) { Text("Add to plan") }
+                Button(
+                    onClick = onConfirm,
+                    enabled = !isPast,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Add to plan") }
                 FilledTonalButton(
                     onClick = {
                         exportSync {

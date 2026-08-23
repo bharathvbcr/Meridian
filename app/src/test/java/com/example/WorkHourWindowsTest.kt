@@ -72,4 +72,45 @@ class WorkHourWindowsTest {
         assertTrue(WorkHourWindows.workWindowToHours(merged.first, merged.second).contains(23))
         assertTrue(WorkHourWindows.workWindowToHours(merged.first, merged.second).contains(7))
     }
+
+    @Test
+    fun disjointWorkIntersectionNeverOverCovers() {
+        // 08–20 ∩ overnight 18–10 = {8,9,18,19}: two arcs on the circle. The merged window must
+        // never claim hours outside the true intersection — 10:00–17:00 belongs to neither person.
+        val merged = WorkHourWindows.intersectWorkWindows(listOf(8 to 20, 18 to 10))
+        val claimed = WorkHourWindows.workWindowToHours(merged.first, merged.second)
+        val truth = WorkHourWindows.workWindowToHours(8, 20)
+            .intersect(WorkHourWindows.workWindowToHours(18, 10))
+        assertTrue("claimed $claimed must be a subset of true intersection $truth", claimed.all { it in truth })
+    }
+
+    @Test
+    fun emptyWorkIntersectionIsNotFabricatedAsNineToFive() {
+        // Day worker 9–17 and night worker 18–02 share no working hour. The merge must not
+        // silently invent the default 9–5 window (start == end encodes "no window").
+        val merged = WorkHourWindows.intersectWorkWindows(listOf(9 to 17, 18 to 2))
+        assertTrue("empty intersection must not fabricate coverage (got $merged)", merged.first == merged.second)
+        assertTrue(WorkHourWindows.workWindowToHours(merged.first, merged.second).isEmpty())
+    }
+
+    @Test
+    fun disjointDndUnionNeverOverBlocks() {
+        // DND 22–06 ∪ DND 12–14 is two arcs. The merged window must never block hours that are
+        // in neither window (6–11 were wrongly blocked as DND before).
+        val merged = WorkHourWindows.unionDndWindows(listOf(22 to 6, 12 to 14))
+        val claimed = WorkHourWindows.workWindowToHours(merged.first, merged.second)
+        val truth = WorkHourWindows.workWindowToHours(22, 6).union(WorkHourWindows.workWindowToHours(12, 14))
+        assertTrue("claimed DND $claimed must be a subset of union $truth", claimed.all { it in truth })
+    }
+
+    @Test
+    fun disjointWorkIntersectionKeepsTheLargestSharedArc() {
+        // Of {8,9} and {18,19}, either arc is honest — but one of them must be kept, not dropped.
+        val merged = WorkHourWindows.intersectWorkWindows(listOf(8 to 20, 18 to 10))
+        val claimed = WorkHourWindows.workWindowToHours(merged.first, merged.second)
+        assertTrue(
+            "largest shared arc must be preserved (got $merged → $claimed)",
+            claimed.containsAll(setOf(8, 9)) || claimed.containsAll(setOf(18, 19)),
+        )
+    }
 }

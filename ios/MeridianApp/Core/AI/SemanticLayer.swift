@@ -5,7 +5,6 @@
 // and grounding compression. Mirrors Android `SemanticLayer.kt`. Target <15 ms overhead.
 
 import Foundation
-import NaturalLanguage
 
 private let embedDim = 384
 private let cacheMax = 64
@@ -26,8 +25,12 @@ struct ChatTurn: Sendable {
 }
 
 enum SemanticCachePolicy: Sendable {
+    /// Skip the cache for intents that must never be replayed: time-sensitive reads whose
+    /// answers go stale, and SCHEDULE — a side-effecting action where a near-duplicate prompt
+    /// ("…at 1pm" vs "…at 2pm") would otherwise replay the first booking's JSON. Mirrors
+    /// Android `SemanticCachePolicy.shouldBypass`.
     static func shouldBypass(intent: AiQueryIntent, prompt: String) -> Bool {
-        if intent == .currentTime { return true }
+        if intent == .currentTime || intent == .schedule { return true }
         if intent == .convert && prompt.lowercased().contains("now") { return true }
         return false
     }
@@ -39,17 +42,12 @@ enum SemanticCachePolicy: Sendable {
 }
 
 enum SemanticEmbedder: Sendable {
-    private static let nlEmbedding: NLEmbedding? = NLEmbedding.sentenceEmbedding(for: .english)
-
-    /// Character trigram hash embedding with optional NaturalLanguage sentence vectors.
+    /// Character trigram hash embedding, L2-normalized — deliberately the ONLY embedding space.
+    /// Mirrors Android exactly; mixing in NLEmbedding sentence vectors would let stored entries
+    /// and later queries come from different vector spaces (availability can change mid-session,
+    /// and non-English text falls back), making cosine scores meaningless. One space, everywhere.
     static func embed(_ text: String) -> [Float] {
-        if let nl = nlEmbedding {
-            let vec = nl.vector(for: text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))
-            if !vec.isEmpty {
-                return normalize(vec.map { Float($0) })
-            }
-        }
-        return trigramEmbed(text)
+        trigramEmbed(text)
     }
 
     static func cosine(_ a: [Float], _ b: [Float]) -> Float {
@@ -70,7 +68,8 @@ enum SemanticEmbedder: Sendable {
         guard chars.count >= 3 else { return vec }
         for i in 0..<(chars.count - 2) {
             let gram = String(chars[i..<(i + 3)])
-            let bucket = abs(gram.hashValue) % embedDim
+            // Mask the sign bit like Kotlin's `and Int.MAX_VALUE`; abs(Int.min) would trap.
+            let bucket = (gram.hashValue & Int.max) % embedDim
             vec[bucket] += 1
         }
         return normalize(vec)
@@ -205,13 +204,43 @@ enum SemanticCompressor: Sendable {
 }
 
 enum SemanticPartialEmitter {
+    private static let stepDelayMs: Int64 = 18
+    /// Caps artificial streaming latency: 32 steps ≈ 576 ms regardless of reply length.
+    private static let maxSteps = 32
+
+    /// Text safe to show while a candidate is still being interpreted: schedule-JSON payloads
+    /// are replaced with a friendly placeholder instead of flashing machine output.
+    static func displayableCandidate(_ text: String) -> String {
+        ScheduleParser.extractScheduleJson(text) != nil ? "Scheduling your event…" : text
+    }
+
     static func emitProgressive(_ text: String, onPartial: @Sendable (String) async -> Void) async {
         guard !text.isEmpty else { return }
-        var built = ""
-        for word in text.split(separator: " ") {
-            built = built.isEmpty ? String(word) : "\(built) \(word)"
-            await onPartial(built)
-            try? await Task.sleep(for: .milliseconds(18))
+        let streamable = displayableCandidate(text)
+        for chunk in partialChunks(streamable, maxChunks: maxSteps) {
+            await onPartial(chunk)
+            do {
+                try await Task.sleep(for: .milliseconds(stepDelayMs))
+            } catch {
+                return // cancelled — stop streaming instead of swallowing the cancellation
+            }
         }
+    }
+
+    /// Splits [text] into at most [maxChunks] monotonically growing prefixes ending with the
+    /// full text. Mirrors Android `partialChunks`.
+    static func partialChunks(_ text: String, maxChunks: Int) -> [String] {
+        let words = text.split(separator: " ").map(String.init)
+        guard words.count > maxChunks else {
+            return (1...words.count).map { words.prefix($0).joined(separator: " ") }
+        }
+        let stride = (words.count + maxChunks - 1) / maxChunks
+        var chunks: [String] = []
+        var end = 0
+        while end < words.count {
+            end = min(end + stride, words.count)
+            chunks.append(words.prefix(end).joined(separator: " "))
+        }
+        return chunks
     }
 }

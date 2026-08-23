@@ -60,6 +60,10 @@ struct DraftConfirmCard: View {
     private var todIcon: String { isDaytime ? "sun.max.fill" : "moon.stars.fill" }
     private var todAccent: Color { isDaytime ? MeridianColors.daylightAccent : MeridianColors.nightAccent }
 
+    /// The model can propose past-dated events ("yesterday 3pm" phrasing); mirror
+    /// QuickScheduleCard's guard so a stale draft can't be confirmed as-is.
+    private var isPast: Bool { draft.timestamp < Date() }
+
     /// VoiceOver-friendly single-string description of the proposed event.
     private var scheduleAccessibilityLabel: String {
         "Proposed event: \(draft.title). \(whenText), \(shortZone)."
@@ -97,8 +101,15 @@ struct DraftConfirmCard: View {
                 .padding(.top, MeridianSpacing.xs.rawValue)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(scheduleAccessibilityLabel)
+            .accessibilityLabel(scheduleAccessibilityLabel + (isPast ? " That time has already passed — ask for a later one." : ""))
             .accessibilityAddTraits(.isHeader)
+
+            if isPast {
+                Text("That time has already passed — ask for a later one.")
+                    .font(.bodyMedium)
+                    .foregroundStyle(MeridianColors.error)
+                    .accessibilityAddTraits(.isStaticText)
+            }
 
             // Primary row: confirm + calendar export. The filled Add capsule is the
             // dominant, constructive default action.
@@ -119,6 +130,7 @@ struct DraftConfirmCard: View {
                 .accessibilityLabel("Add to plan")
                 .accessibilityHint("Adds this event to your plan")
                 .accessibilityAddTraits(.isButton)
+                .disabled(isPast)
 
                 Button {
                     feedbackTrigger &+= 1

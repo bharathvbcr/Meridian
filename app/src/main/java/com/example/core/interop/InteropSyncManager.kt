@@ -71,8 +71,12 @@ class InteropSyncManager(
      * Cancels DevTime's own task reminders when ChronosFlow is the active notifier, or (re)schedules
      * them when it isn't — so exactly one app reminds for any given task. Only locally-authored tasks
      * are touched; imported rows are ChronosFlow's responsibility.
+     *
+     * Public because it is also the boot/update path: AlarmManager alarms do not survive a reboot
+     * or app update, so [com.example.core.notify.BootCompletedReceiver] calls this to re-arm them
+     * from the persisted task list without needing the peer-sync round trip.
      */
-    private suspend fun reconcileOwnReminders() {
+    suspend fun reconcileOwnReminders() {
         val peerNotifier = client.isPeerShareAvailable()
         val nativeTasks = taskDao.getNativeTasksOnce()
         for (task in nativeTasks) {

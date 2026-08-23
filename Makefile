@@ -16,11 +16,14 @@ ios:
 	cd $(ROOT)/ios && xcodegen generate && xcodebuild \
 	  -project Meridian.xcodeproj \
 	  -scheme Meridian \
-	  -destination 'platform=iOS Simulator,name=iPhone 16' \
+	  -destination 'generic/platform=iOS Simulator' \
 	  -quiet build
 
 build-all: android test-android ios
 	@echo "All builds succeeded."
+
+ci\:local ci-local: test-android android
+	@echo "Local CI passed."
 
 # --- Python tooling (store assets, map texture, city DB, semantic bench) ---
 

@@ -13,6 +13,11 @@ private const val CACHE_THRESHOLD = 0.86f
 private const val CACHE_MARGIN = 0.04f
 private const val GROUNDING_COMPRESS_AT = 1_200
 
+// Streaming cadence for progressive partials: 18 ms per step, capped so even a very long reply
+// finishes streaming in well under a second (32 steps ≈ 576 ms).
+internal const val PARTIAL_STEP_DELAY_MS = 18L
+internal const val MAX_PARTIAL_STEPS = 32
+
 // Answers here are time-valued (live clock, conversions, meeting windows), so a cache hit must be
 // recent or it replays a stale reading — "9:41 PM" served an hour later. The TTL bounds staleness to
 // the cache's real purpose: collapsing rapid re-asks, retries, and double-submits. Keep it short.
@@ -141,7 +146,7 @@ class SemanticCache(
                 groundingKey = groundingKey,
             ),
         )
-        while (entries.size > maxEntries) entries.removeLast()
+        while (entries.size > maxEntries) entries.pollLast()
     }
 }
 
@@ -190,15 +195,44 @@ object SemanticCompressor {
     }
 }
 
-/** Progressive partial text for rules/cache paths — improves perceived latency in the UI. */
+/**
+ * Text safe to show while a candidate is still being interpreted: schedule-JSON payloads are
+ * replaced with a friendly placeholder instead of flashing machine output at the user.
+ */
+fun displayableCandidate(text: String): String =
+    if (ScheduleParser.extractScheduleJson(text) != null) "Scheduling your event…" else text
+
+/**
+ * Progressive partial text for rules/cache paths — improves perceived latency in the UI.
+ * Schedule-JSON payloads are never streamed raw (the user would watch machine output flash by
+ * right before the confirm card takes over); a friendly placeholder streams instead.
+ */
 suspend fun emitProgressivePartial(text: String, onPartial: suspend (String) -> Unit) {
     if (text.isBlank()) return
-    val words = text.split(' ')
-    val sb = StringBuilder()
-    for (word in words) {
-        if (sb.isNotEmpty()) sb.append(' ')
-        sb.append(word)
-        onPartial(sb.toString())
-        kotlinx.coroutines.delay(18)
+    val chunks = partialChunks(displayableCandidate(text), maxChunks = MAX_PARTIAL_STEPS)
+    for (chunk in chunks) {
+        onPartial(chunk)
+        kotlinx.coroutines.delay(PARTIAL_STEP_DELAY_MS)
     }
+}
+
+/**
+ * Splits [text] into at most [maxChunks] monotonically growing prefixes ending with the full
+ * text. One callback per word made long replies re-render the bubble dozens of times per second
+ * and added ~18 ms of artificial latency per word; bounding the step count caps both.
+ */
+internal fun partialChunks(text: String, maxChunks: Int): List<String> {
+    val words = text.split(' ')
+    if (words.size <= maxChunks) {
+        return List(words.size) { i -> words.take(i + 1).joinToString(" ") }
+    }
+    // Emit every k-th word so each chunk boundary lands on a word edge.
+    val stride = (words.size + maxChunks - 1) / maxChunks
+    val chunks = mutableListOf<String>()
+    var end = 0
+    while (end < words.size) {
+        end = minOf(end + stride, words.size)
+        chunks.add(words.take(end).joinToString(" "))
+    }
+    return chunks
 }

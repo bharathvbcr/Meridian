@@ -245,7 +245,7 @@ final class AiAssistant {
 
         // Engine produced text → interpret it (schedule JSON or plain answer).
         if let candidate {
-            await onPartial(candidate.text)
+            await onPartial(SemanticPartialEmitter.displayableCandidate(candidate.text))
             let result = await interpret(
                 text: candidate.text,
                 source: candidate.source,
@@ -273,7 +273,7 @@ final class AiAssistant {
             originalPrompt: prompt,
             homeZoneId: zone.identifier,
             instant: instant,
-            storeInCache: true,
+            storeInCache: !SemanticCachePolicy.shouldBypass(intent: ground.intent, prompt: prompt),
             groundingKey: groundingKey
         )
         logResult(path: "rules-fallback", result: result, startedAt: startedAt)
@@ -306,6 +306,9 @@ final class AiAssistant {
         groundingKey: Int64 = 0
     ) async -> AiResult {
         if let scheduleJson = ScheduleParser.extractScheduleJson(text) {
+            // A booking is an action, never a replayable answer: even if `storeInCache` was set
+            // by an intent misclassification, schedule JSON must not enter the cache (a
+            // near-duplicate later prompt would re-book the first request's time).
             if let task = await ScheduleParser.buildScheduledTask(
                 jsonStr: scheduleJson,
                 originalPrompt: originalPrompt,
@@ -313,9 +316,6 @@ final class AiAssistant {
                 homeZoneId: homeZoneId,
                 resolveZoneId: { [tools] query in tools.resolveZoneId(query) }
             ) {
-                if storeInCache {
-                    semanticCache.store(prompt: originalPrompt, response: text, source: source, groundingKey: groundingKey)
-                }
                 return .scheduled(task: task, source: source)
             }
             let title = ScheduleParser.titleOf(scheduleJson)
@@ -446,7 +446,9 @@ final class AiAssistant {
 
     // MARK: - Static instruction text (ported from Android buildSystemInstruction)
 
-    static let systemInstruction: String = """
+    // nonisolated: an immutable String is safe to read from any actor — without this,
+    // the static inherits @MainActor isolation and AiInferenceActor can't reference it.
+    nonisolated static let systemInstruction: String = """
         You are Meridian, an elegant world-clock and calendar assistant.
         You help with world times, time-zone conversions, fair meeting windows, and scheduling.
 
@@ -556,9 +558,7 @@ struct GeminiCloudClient: Sendable {
         withTools: Bool
     ) async throws -> [String: Any] {
         let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
-        guard var components = URLComponents(string: endpoint) else { throw CloudError.badURL }
-        components.queryItems = [URLQueryItem(name: "key", value: apiKey)]
-        guard let url = components.url else { throw CloudError.badURL }
+        guard let url = URL(string: endpoint) else { throw CloudError.badURL }
 
         var body: [String: Any] = [
             "systemInstruction": ["parts": [["text": systemInstruction]]],
@@ -570,6 +570,8 @@ struct GeminiCloudClient: Sendable {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // Key goes in a header, not a query param — URLs leak into logs and proxies.
+        request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, response) = try await URLSession.shared.data(for: request)
