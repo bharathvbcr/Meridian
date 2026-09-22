@@ -4,6 +4,8 @@
 
 # Meridian — Time & World Planner
 
+[![Website](https://img.shields.io/badge/website-meridian.vbcr.dev-B91C1C?style=flat&logo=safari&logoColor=white)](https://meridian.vbcr.dev/)
+
 </div>
 
 Meridian is a multi-platform application (native **Kotlin/Jetpack Compose Android** and native **Swift/SwiftUI iOS + watchOS**) for **local time, world time, multi-zone planning, and AI-assisted scheduling**. It features a bold **Material 3 Expressive** design system on Android and an **Apple-style Liquid Glass** design system across both platforms (utilizing Haze blur and custom canvas compositor / AGSL refraction pass).
