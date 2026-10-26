@@ -128,3 +128,13 @@ make build-cities          # GeoNames → cities.db (+ app assets copy)
 │   └── semantic_layer/        # Reference Python semantic cache, router, and benchmarks
 └── docs/                      # Architectural Decision Records (ADRs) & specs
 ```
+
+---
+
+## License & Acknowledgements
+
+Released under the [MIT License](LICENSE).
+
+- **[Haze (`chrisbanes/haze`)](https://github.com/chrisbanes/haze)** (`Chris Banes`, Apache-2.0) — Frosted glass blur effects in Jetpack Compose.
+- **[SceneView (`SceneView/sceneview-android`)](https://github.com/SceneView/sceneview-android)** (`Thomas Gorisse`, Apache-2.0) — 3D globe rendering on Android.
+- **[XcodeGen (`yonaskolb/XcodeGen`)](https://github.com/yonaskolb/XcodeGen)** (`Yonas Kolb`, MIT) — Declarative Xcode project generation for `ios/`.
